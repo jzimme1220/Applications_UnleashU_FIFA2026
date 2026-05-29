@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stadium Switch Config Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f111a;
+            --surface: rgba(25, 28, 41, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --input-bg: rgba(15, 17, 26, 0.7);
+            --code-bg: rgba(10, 11, 16, 0.9);
+            --success: #10b981;
+            --warn: #f59e0b;
+            --error: #ef4444;
+            --blocked: #334155;
+            --port-empty: rgba(51, 65, 85, 0.5);
+            --port-configured: rgba(99, 102, 241, 0.35);
+            --port-selected: rgba(236, 72, 153, 0.5);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .bg-orbs {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(90px);
+            opacity: 0.35;
+        }
+
+        .orb-a { width: 420px; height: 420px; top: -8%; left: 5%; background: #6366f1; }
+        .orb-b { width: 500px; height: 500px; bottom: -15%; right: -5%; background: #ec4899; }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        header h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p { color: var(--muted); font-size: 0.95rem; margin-top: 0.35rem; }
+
+        .card {
+            background: var(--surface);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+
+        .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 160px; }
+
+        .field.narrow { flex: 0 0 120px; min-width: 100px; }
+
+        label { font-size: 0.85rem; font-weight: 500; color: #cbd5e1; }
+
+        select, input, textarea {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.65rem 0.85rem;
+            border-radius: 10px;
+            font: inherit;
+            width: 100%;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+        }
+
+        input[type="file"] { padding: 0.5rem; font-size: 0.85rem; }
+
+        .btn {
+            cursor: pointer;
+            border: none;
+            font: inherit;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 0.65rem 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: transform 0.15s, background 0.15s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover { transform: translateY(-1px); }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .screen { display: none; }
+        .screen.active { display: block; }
+
+        .steps {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .step-pill {
+            padding: 0.4rem 0.9rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+
+        .step-pill.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: #c7d2fe;
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        .stack-member {
+            margin-bottom: 1.5rem;
+        }
+
+        .stack-member h3 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stack-member h3 span {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.06);
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        /* 48-port: pairs as columns — odd over even (1/2, 3/4, …) */
+        .port-grid.paired-48 {
+            display: grid;
+            gap: 4px 6px;
+            grid-template-columns: repeat(24, minmax(0, 1fr));
+        }
+
+        .port-pair {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .port-grid.paired-48 .port {
+            aspect-ratio: auto;
+            min-height: 30px;
+            flex: 1;
+        }
+
+        /* 12-port: single horizontal row (unchanged) */
+        .port-grid.cols-12 {
+            display: grid;
+            gap: 4px;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+        }
+
+        @media (max-width: 1100px) {
+            .port-grid.paired-48 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+        }
+
+        .port {
+            aspect-ratio: 1.1;
+            min-height: 28px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--port-empty);
+            font-size: 0.62rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            transition: background 0.12s, border-color 0.12s, transform 0.1s;
+        }
+
+        .port:hover:not(.blocked):not(.disabled) {
+            border-color: var(--primary);
+            transform: scale(1.05);
+        }
+
+        .port.configured {
+            background: var(--port-configured);
+            border-color: rgba(99, 102, 241, 0.5);
+            color: #e0e7ff;
+        }
+
+        .port.selected {
+            background: var(--port-selected);
+            border-color: #ec4899;
+            box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.4);
+        }
+
+        .port.blocked {
+            background: var(--blocked);
+            color: #64748b;
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .port.disabled {
+            cursor: default;
+            opacity: 0.4;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        .legend i {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            margin-right: 0.35rem;
+            vertical-align: middle;
+        }
+
+        .layout-main {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 1rem;
+        }
+
+        @media (max-width: 1000px) {
+            .layout-main { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background: rgba(15, 17, 26, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .panel h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .panel .hint {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 0.5rem;
+        }
+
+        .cli-output {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            line-height: 1.55;
+            min-height: 220px;
+            resize: vertical;
+            background: var(--code-bg);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 1.25rem;
+            right: 1.25rem;
+            padding: 0.85rem 1.2rem;
+            border-radius: 10px;
+            background: rgba(30, 41, 59, 0.95);
+            border: 1px solid var(--border);
+            z-index: 200;
+            font-size: 0.9rem;
+            transition: opacity 0.25s, transform 0.25s;
+        }
+
+        .toast.hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
+        .toast.ok { border-left: 4px solid var(--success); }
+        .toast.err { border-left: 4px solid var(--error); }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--muted);
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        hr.divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 1rem 0;
+        }
+
+        .device-meta {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        .device-meta strong { color: #e2e8f0; }
+    </style>
+</head>
+
+<body>
+    <div class="bg-orbs" aria-hidden="true">
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+    </div>
+
+    <div class="app">
+        <header>
+            <h1>Stadium Switch Config Generator</h1>
+            <p>Production IOS configlet builder — executable interface blocks, VLAN inject, template validation</p>
+        </header>
+
+        <div class="card">
+            <div class="card-title">Data sources</div>
+            <div class="row">
+                <div class="field">
+                    <label for="inventory-file">IP / device sheet (CSV or JSON)</label>
+                    <input type="file" id="inventory-file" accept=".csv,.json,text/csv,application/json">
+                </div>
+                <div class="field">
+                    <label for="templates-file">Interface templates (.txt)</label>
+                    <input type="file" id="templates-file" accept=".txt,text/plain">
+                </div>
+                <div class="field narrow">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-secondary" id="load-sample-btn">Load sample data</button>
+                </div>
+            </div>
+            <p class="hint" style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted);">
+                CSV columns (flexible names): location_id, location_name, hostname, management_ip, stack_member, port_count, model.
+                Stack = multiple rows with same hostname + management_ip (max 5 members).
+            </p>
+        </div>
+
+        <div class="steps">
+            <span class="step-pill active" id="step-pill-1">1 — Venue &amp; device</span>
+            <span class="step-pill" id="step-pill-2">2 — Port matrix &amp; CLI</span>
+        </div>
+
+        <!-- Screen 1 -->
+        <section class="screen active" id="screen-1">
+            <div class="card">
+                <div class="card-title">Select venue and switch</div>
+                <div class="row">
+                    <div class="field">
+                        <label for="venue-select">Stadium / location</label>
+                        <select id="venue-select" disabled>
+                            <option value="">— Load inventory first —</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="device-select">Switch hostname</label>
+                        <select id="device-select" disabled>
+                            <option value="">— Select location —</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="device-meta" id="device-summary"></div>
+                <div class="toolbar">
+                    <button type="button" class="btn btn-primary" id="goto-matrix-btn" disabled>Configure ports →</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Screen 2 -->
+        <section class="screen" id="screen-2">
+            <div class="card">
+                <div class="toolbar">
+                    <button type="button" class="btn btn-secondary" id="back-btn">← Back to picker</button>
+                    <span class="badge" id="active-device-label"></span>
+                </div>
+
+                <div class="legend">
+                    <span><i style="background:var(--port-empty)"></i>Empty</span>
+                    <span><i style="background:var(--port-configured)"></i>Configured</span>
+                    <span><i style="background:var(--port-selected)"></i>Selected</span>
+                    <span><i style="background:var(--blocked)"></i>Ports 44–48 (blocked)</span>
+                </div>
+
+                <div class="layout-main">
+                    <div id="port-matrix-container"></div>
+
+                    <aside>
+                        <div class="panel" style="margin-bottom:1rem;">
+                            <h4>Port assignment</h4>
+                            <p class="hint" id="edit-port-label">Click an editable port (1–43)</p>
+                            <div class="field" style="margin-bottom:0.75rem;">
+                                <label for="vlan-input">VLAN ID</label>
+                                <input type="number" id="vlan-input" min="1" max="4094" placeholder="e.g. 696" disabled>
+                            </div>
+                            <div class="field" style="margin-bottom:0.75rem;">
+                                <label for="template-select">Interface template</label>
+                                <select id="template-select" disabled>
+                                    <option value="">— Select general template —</option>
+                                </select>
+                            </div>
+                            <div class="field" style="margin-bottom:0.75rem;">
+                                <label for="desc-input">Description (optional)</label>
+                                <input type="text" id="desc-input" placeholder="Access port label" disabled>
+                            </div>
+                            <div class="toolbar">
+                                <button type="button" class="btn btn-primary" id="apply-port-btn" disabled>Apply to selection</button>
+                                <button type="button" class="btn btn-secondary" id="clear-port-btn" disabled>Clear</button>
+                            </div>
+                        </div>
+
+                        <div class="panel" style="margin-bottom:1rem;">
+                            <h4>Bulk replicate</h4>
+                            <p class="hint">Configure a source port, then copy its VLAN + template to a range on the same stack member.</p>
+                            <div class="field" style="margin-bottom:0.5rem;">
+                                <label for="bulk-member">Stack member</label>
+                                <select id="bulk-member"></select>
+                            </div>
+                            <div class="row">
+                                <div class="field narrow">
+                                    <label for="bulk-from">From port</label>
+                                    <input type="number" id="bulk-from" min="1" max="43" value="1">
+                                </div>
+                                <div class="field narrow">
+                                    <label for="bulk-to">To port</label>
+                                    <input type="number" id="bulk-to" min="1" max="43" value="1">
+                                </div>
+                            </div>
+                            <div class="toolbar" style="margin-top:0.5rem;">
+                                <button type="button" class="btn btn-secondary" id="bulk-apply-btn">Copy source → range</button>
+                                <button type="button" class="btn btn-secondary" id="bulk-selection-btn">Copy source → selected</button>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                                <h4 style="margin:0;">Generated CLI</h4>
+                                <button type="button" class="btn btn-secondary" id="copy-cli-btn" style="padding:0.4rem 0.7rem;font-size:0.8rem;">Copy</button>
+                            </div>
+                            <textarea class="cli-output" id="cli-output" readonly placeholder="Assign ports to generate interface configlets…"></textarea>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const EDITABLE_PORT_MAX = 43;
+            const BLOCKED_PORT_MIN = 44;
+            const MAX_STACK_MEMBERS = 5;
+
+            /** @type {{ venues: object[] }} */
+            let inventory = { venues: [] };
+            /** @type {Map<string, { key: string, body: string[] }>} */
+            let templateCatalog = new Map();
+            /** Keys from built-in Template_General.txt (usable without VLAN). */
+            const generalTemplateKeys = new Set();
+
+            /** Hardcoded Template_General.txt — no upload required. */
+            const GENERAL_TEMPLATES_BUILTIN = `template AP_INTERFACE_TEMPLATE
+ switchport trunk native vlan 950
+ switchport trunk allowed vlan 136,144,216,224,240,340,356,476,508,664,950
+ switchport mode trunk
+ switchport nonegotiate
+ device-tracking attach-policy DISABLE-IP-TRACKING-AP
+ service-policy input AutoConf-4.0-Trust-Cos-Input-Policy
+ service-policy output AutoConf-4.0-Output-Policy
+!
+template PORT-AUTH-TEMPLATE
+dot1x pae authenticator
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ storm-control action trap
+ dot1x timeout tx-period 5
+ dot1x timeout supp-timeout 5
+ dot1x max-req 1
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ switchport mode access
+ mab
+ access-session host-mode multi-auth
+ access-session control-direction in
+ access-session closed
+ access-session port-control auto
+ authentication periodic
+ authentication timer reauthenticate server
+ service-policy type control subscriber PORT-AUTH-POLICY
+ spanning-tree guard root
+!
+template PORT-MAB-AUTH-TEMPLATE-MA
+ dot1x pae authenticator
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ switchport mode access
+ mab
+ access-session control-direction in
+ access-session host-mode multi-auth
+ access-session closed
+ access-session port-control auto
+ authentication periodic
+ authentication timer reauthenticate server
+ service-policy type control subscriber PORT-AUTH-POLICY-MAB-ONLY
+ spanning-tree guard root
+!
+template PORT-VLAN-TEMPLATE-NO-RATE
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ storm-control action trap
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ switchport mode access
+ spanning-tree guard root
+!`;
+            /** @type {string | null} */
+            let activeDeviceId = null;
+            /** @type {Set<string>} */
+            let selectedPorts = new Set();
+            /** @type {string | null} */
+            let lastFocusedPort = null;
+            /** portKey -> { vlanId, templateKey, description? } */
+            let portAssignments = {};
+
+            const $ = (id) => document.getElementById(id);
+
+            function toast(msg, type = 'ok') {
+                const el = $('toast');
+                el.textContent = msg;
+                el.className = `toast ${type === 'ok' ? 'ok' : 'err'}`;
+                clearTimeout(el._t);
+                el._t = setTimeout(() => el.classList.add('hidden'), 3200);
+            }
+
+            function normalizeHeader(h) {
+                return String(h || '').trim().toLowerCase().replace(/\s+/g, '_');
+            }
+
+            function pick(row, ...keys) {
+                for (const k of keys) {
+                    if (row[k] !== undefined && row[k] !== '') return row[k];
+                }
+                return '';
+            }
+
+            function parseCSV(text) {
+                const lines = text.split(/\r?\n/).filter((l) => l.trim());
+                if (!lines.length) return [];
+                const delim = lines[0].includes(';') && !lines[0].includes(',') ? ';' : ',';
+                const headers = lines[0].split(delim).map(normalizeHeader);
+                const rows = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = splitCSVLine(lines[i], delim);
+                    const row = {};
+                    headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
+                    rows.push(row);
+                }
+                return rows;
+            }
+
+            function splitCSVLine(line, delim) {
+                const out = [];
+                let cur = '';
+                let inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') { inQ = !inQ; continue; }
+                    if (c === delim && !inQ) { out.push(cur); cur = ''; continue; }
+                    cur += c;
+                }
+                out.push(cur);
+                return out;
+            }
+
+            function rowsToDevices(rows) {
+                const normalized = rows.map((r) => ({
+                    location_id: pick(r, 'location_id', 'locationid', 'venue_id', 'site_id') || 'DEFAULT',
+                    location_name: pick(r, 'location_name', 'location', 'venue', 'stadium', 'site') || pick(r, 'location_id') || 'Default Venue',
+                    hostname: pick(r, 'hostname', 'host', 'device', 'switch'),
+                    management_ip: pick(r, 'management_ip', 'mgmt_ip', 'ip', 'managementip'),
+                    stack_member: parseInt(pick(r, 'stack_member', 'member', 'stack_index', 'switch_number') || '1', 10),
+                    port_count: parseInt(pick(r, 'port_count', 'ports', 'portcount') || '48', 10),
+                    model: pick(r, 'model', 'platform') || '',
+                    stack_priority: pick(r, 'stack_priority', 'priority') || ''
+                })).filter((r) => r.hostname);
+
+                const groups = new Map();
+                for (const row of normalized) {
+                    const key = `${row.location_id}::${row.hostname}::${row.management_ip}`;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(row);
+                }
+
+                const venuesMap = new Map();
+
+                for (const [, members] of groups) {
+                    members.sort((a, b) => a.stack_member - b.stack_member);
+                    if (members.length > MAX_STACK_MEMBERS) {
+                        throw new Error(`Stack "${members[0].hostname}" has ${members.length} members (max ${MAX_STACK_MEMBERS}).`);
+                    }
+
+                    const first = members[0];
+                    const deviceId = `${first.location_id}:${first.hostname}`;
+                    const isStack = members.length > 1;
+
+                    const device = {
+                        id: deviceId,
+                        hostname: first.hostname,
+                        managementIp: first.management_ip,
+                        isStack,
+                        members: members.map((m) => ({
+                            memberIndex: m.stack_member,
+                            portCount: m.port_count === 12 ? 12 : 48,
+                            model: m.model,
+                            editablePortRange: { start: 1, end: EDITABLE_PORT_MAX }
+                        }))
+                    };
+
+                    if (!venuesMap.has(first.location_id)) {
+                        venuesMap.set(first.location_id, {
+                            id: first.location_id,
+                            name: first.location_name,
+                            devices: []
+                        });
+                    }
+                    venuesMap.get(first.location_id).devices.push(device);
+                }
+
+                for (const v of venuesMap.values()) {
+                    v.devices.sort((a, b) => a.hostname.localeCompare(b.hostname));
+                }
+
+                return { venues: [...venuesMap.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+            }
+
+            function enrichTemplateEntry(entry) {
+                const stripped = entry.body.map((l) => l.trim()).filter(Boolean);
+                entry.hasInputPolicy = stripped.some((l) => /^service-policy\s+input\s+/i.test(l));
+                entry.hasOutputPolicy = stripped.some((l) => /^service-policy\s+output\s+/i.test(l));
+                entry.isAsymmetric = entry.hasInputPolicy && !entry.hasOutputPolicy;
+                entry.hasSwitchportAccessVlan = stripped.some((l) => /^switchport\s+access\s+vlan\s+/i.test(l));
+                return entry;
+            }
+
+            function initGeneralTemplates() {
+                const general = parseTemplatesFile(GENERAL_TEMPLATES_BUILTIN);
+                generalTemplateKeys.clear();
+                for (const [key, entry] of general) {
+                    generalTemplateKeys.add(key);
+                    templateCatalog.set(key, entry);
+                }
+            }
+
+            function isGeneralTemplateKey(key) {
+                return generalTemplateKeys.has(key);
+            }
+
+            function getGeneralTemplates() {
+                return [...generalTemplateKeys]
+                    .map((k) => templateCatalog.get(k))
+                    .filter(Boolean)
+                    .sort((a, b) => a.key.localeCompare(b.key));
+            }
+
+            function templatesForDropdown(vlanId) {
+                const vlan = String(vlanId ?? '').trim();
+                if (!vlan || !/^\d+$/.test(vlan)) {
+                    return getGeneralTemplates();
+                }
+                return templatesForVlan(vlan);
+            }
+
+            function parseTemplatesFile(text) {
+                const catalog = new Map();
+                const blocks = text.split(/^!/m);
+                for (const block of blocks) {
+                    const trimmed = block.trim();
+                    if (!trimmed.toLowerCase().startsWith('template ')) continue;
+                    const lines = trimmed.split(/\r?\n/);
+                    const first = lines[0].trim();
+                    const m = first.match(/^template\s+(\S+)/i);
+                    if (!m) continue;
+                    const key = m[1];
+                    catalog.set(key, enrichTemplateEntry({
+                        key,
+                        body: lines.slice(1).map((l) => l.trimEnd())
+                    }));
+                }
+                return catalog;
+            }
+
+            function extractVlanFromTemplateKey(key) {
+                let m = key.match(/^Template_VLAN_(\d+)_/i);
+                if (m) return m[1];
+                m = key.match(/^VLAN(\d+)_INTERFACE_TEMPLATE/i);
+                if (m) return m[1];
+                return null;
+            }
+
+            function getAllTemplatesForVlan(vlanId) {
+                const v = String(vlanId).trim();
+                if (!v || !/^\d+$/.test(v)) return [];
+
+                const prefixes = [
+                    `Template_VLAN_${v}_`,
+                    `VLAN${v}_INTERFACE_TEMPLATE`
+                ];
+
+                const matches = [];
+                for (const [key, entry] of templateCatalog) {
+                    if (prefixes.some((p) => key.startsWith(p) || key.toLowerCase().startsWith(p.toLowerCase()))) {
+                        matches.push(entry);
+                    }
+                }
+                return matches.sort(compareTemplatesByPolicing);
+            }
+
+            function templateHasTierSuffix(key) {
+                return /_\d+Mbps$/i.test(key)
+                    || /_INTERFACE_TEMPLATE_\d+Mbps$/i.test(key)
+                    || /_INTERFACE_TEMPLATE_[A-Z0-9]+_\d+Mbps$/i.test(key);
+            }
+
+            /** Policing tier from template key (e.g. 10 from …_10Mbps); null if untiered. */
+            function extractPolicingMbpsFromTemplateKey(key) {
+                const tier = key.match(/(?:^|_)(\d+)\s*Mbps\s*$/i);
+                if (tier) return parseInt(tier[1], 10);
+                const any = key.match(/(\d+)\s*Mbps/i);
+                return any ? parseInt(any[1], 10) : null;
+            }
+
+            function compareTemplatesByPolicing(a, b) {
+                const mbpsA = extractPolicingMbpsFromTemplateKey(a.key);
+                const mbpsB = extractPolicingMbpsFromTemplateKey(b.key);
+                if (mbpsA !== null && mbpsB !== null) return mbpsA - mbpsB;
+                if (mbpsA !== null) return -1;
+                if (mbpsB !== null) return 1;
+                return a.key.localeCompare(b.key);
+            }
+
+            function isUntieredGenericTemplate(key, vlanId) {
+                const v = String(vlanId);
+                if (/^Template_VLAN_/i.test(key)) {
+                    return !templateHasTierSuffix(key);
+                }
+                return new RegExp(`^VLAN${v}_INTERFACE_TEMPLATE$`, 'i').test(key);
+            }
+
+            function vlanRequiresTier(vlanId) {
+                return getAllTemplatesForVlan(vlanId).some((t) => templateHasTierSuffix(t.key));
+            }
+
+            function templatesForVlan(vlanId) {
+                let matches = getAllTemplatesForVlan(vlanId);
+                if (vlanRequiresTier(vlanId)) {
+                    matches = matches.filter((t) => !isUntieredGenericTemplate(t.key, vlanId));
+                }
+                return matches;
+            }
+
+            function toIosChildLine(line) {
+                const trimmed = line.trim();
+                if (!trimmed) return null;
+                return ` ${trimmed}`;
+            }
+
+            function validatePortAssignment(assign) {
+                const errors = [];
+                const vlanId = String(assign?.vlanId ?? '').trim();
+                const templateKey = assign?.templateKey;
+                const hasVlan = /^\d+$/.test(vlanId);
+                const isGeneral = isGeneralTemplateKey(templateKey);
+
+                if (!templateKey) {
+                    errors.push('Missing interface template.');
+                    return errors;
+                }
+
+                if (!hasVlan && !isGeneral) {
+                    errors.push('Invalid or missing VLAN ID (required for VLAN-specific templates).');
+                }
+
+                const tpl = templateCatalog.get(templateKey);
+                if (!tpl) {
+                    errors.push(`Template "${templateKey}" not found in catalog.`);
+                    return errors;
+                }
+
+                if (!isGeneral) {
+                    if (!hasVlan) {
+                        errors.push('VLAN ID is required for this template.');
+                    } else {
+                        const allowed = templatesForVlan(vlanId);
+                        if (!allowed.some((t) => t.key === templateKey)) {
+                            if (vlanRequiresTier(vlanId) && isUntieredGenericTemplate(templateKey, vlanId)) {
+                                errors.push('This VLAN requires a tiered template (e.g. _10Mbps, _50Mbps); generic template not allowed.');
+                            } else {
+                                errors.push('Template does not match selected VLAN.');
+                            }
+                        }
+                    }
+                }
+
+                if (tpl.hasInputPolicy && !tpl.hasOutputPolicy && !tpl.isAsymmetric) {
+                    errors.push('Catalog template has input service-policy but no output (incomplete definition).');
+                }
+
+                const keyVlan = extractVlanFromTemplateKey(templateKey);
+                if (keyVlan && hasVlan && keyVlan !== vlanId) {
+                    errors.push(`Template VLAN (${keyVlan}) does not match selected VLAN (${vlanId}).`);
+                }
+
+                return errors;
+            }
+
+            function buildExecutableConfigLines(tpl, vlanId) {
+                const configLines = [];
+                let hasAccessVlan = false;
+                let injectedVlan = false;
+                const vlan = String(vlanId ?? '').trim();
+                const injectVlan = /^\d+$/.test(vlan);
+
+                for (const raw of tpl.body) {
+                    const trimmed = raw.trim();
+                    if (!trimmed) continue;
+                    if (/^source\s+template\s+/i.test(trimmed)) continue;
+
+                    if (/^switchport\s+access\s+vlan\s+/i.test(trimmed)) {
+                        hasAccessVlan = true;
+                        if (injectVlan) {
+                            configLines.push(` switchport access vlan ${vlan}`);
+                        } else {
+                            const iosLine = toIosChildLine(raw);
+                            if (iosLine) configLines.push(iosLine);
+                        }
+                        continue;
+                    }
+
+                    const iosLine = toIosChildLine(raw);
+                    if (!iosLine) continue;
+                    configLines.push(iosLine);
+
+                    if (injectVlan && /^switchport\s+mode\s+access\s*$/i.test(trimmed) && !injectedVlan && !hasAccessVlan) {
+                        configLines.push(` switchport access vlan ${vlan}`);
+                        injectedVlan = true;
+                        hasAccessVlan = true;
+                    }
+                }
+
+                if (injectVlan && !hasAccessVlan) {
+                    const modeIdx = configLines.findIndex((l) => /switchport\s+mode\s+access/i.test(l));
+                    if (modeIdx >= 0) {
+                        configLines.splice(modeIdx + 1, 0, ` switchport access vlan ${vlan}`);
+                    } else {
+                        configLines.unshift(' switchport mode access', ` switchport access vlan ${vlan}`);
+                    }
+                }
+
+                return configLines;
+            }
+
+            function compileInterfaceBlock(pk, assign) {
+                const errors = validatePortAssignment(assign);
+                if (errors.length) {
+                    return { ok: false, lines: [], errors };
+                }
+
+                const tpl = templateCatalog.get(assign.templateKey);
+                const vlanId = String(assign.vlanId ?? '').trim();
+                const configLines = buildExecutableConfigLines(tpl, vlanId);
+
+                const hasInput = configLines.some((l) => /service-policy\s+input/i.test(l));
+                const hasOutput = configLines.some((l) => /service-policy\s+output/i.test(l));
+
+                if (hasInput && !hasOutput && !tpl.isAsymmetric) {
+                    return {
+                        ok: false,
+                        lines: [],
+                        errors: ['Input service-policy requires matching output service-policy for this template profile.']
+                    };
+                }
+
+                const lines = [`interface GigabitEthernet${pk}`];
+                if (assign.description) {
+                    lines.push(` description ${assign.description}`);
+                }
+                lines.push(` ! Applied Template: ${assign.templateKey}`);
+                lines.push(...configLines);
+                lines.push('!');
+                return { ok: true, lines, errors: [] };
+            }
+
+            function portKey(memberIndex, port) {
+                return `${memberIndex}/0/${port}`;
+            }
+
+            function parsePortKey(key) {
+                const m = key.match(/^(\d+)\/0\/(\d+)$/);
+                return m ? { member: parseInt(m[1], 10), port: parseInt(m[2], 10) } : null;
+            }
+
+            function getDevice() {
+                if (!activeDeviceId) return null;
+                for (const v of inventory.venues) {
+                    const d = v.devices.find((x) => x.id === activeDeviceId);
+                    if (d) return d;
+                }
+                return null;
+            }
+
+            function loadSampleData() {
+                const sampleRows = [
+                    { location_id: 'DEMO_STAD', location_name: 'Demo Stadium', hostname: 'SW-ACC-01', management_ip: '10.20.1.10', stack_member: '1', port_count: '48', model: 'C9300-48P' },
+                    { location_id: 'DEMO_STAD', location_name: 'Demo Stadium', hostname: 'SW-ACC-01', management_ip: '10.20.1.10', stack_member: '2', port_count: '48', model: 'C9300-48P' },
+                    { location_id: 'DEMO_STAD', location_name: 'Demo Stadium', hostname: 'SW-ACC-02', management_ip: '10.20.1.11', stack_member: '1', port_count: '12', model: 'C9200-12P' }
+                ];
+                inventory = rowsToDevices(sampleRows);
+
+                {
+                    const demoTemplates = `template VLAN64_INTERFACE_TEMPLATE_20Mbps
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ storm-control action trap
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ switchport mode access
+ service-policy input PM_IN_VLAN64_FTI_CIS_20Mbps
+ service-policy output PM_OUT_VLAN64_FTI_CIS_20Mbps
+!
+template VLAN72_INTERFACE_TEMPLATE_50Mbps
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ storm-control action trap
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ switchport mode access
+ service-policy input PM_IN_VLAN72_Dedicated-Internet-Access_50Mbps
+ service-policy output PM_OUT_VLAN72_Dedicated-Internet-Access_50Mbps
+!
+template VLAN8_INTERFACE_TEMPLATE
+ storm-control broadcast level 20.00
+ storm-control multicast level 30.00
+ storm-control action trap
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ switchport mode access
+ service-policy input PM_IN_VLAN8_GNA_Agence_France_Presse
+!`;
+                    const demo = parseTemplatesFile(demoTemplates);
+                    for (const [k, v] of demo) templateCatalog.set(k, v);
+                }
+
+                refreshVenueDropdown();
+                toast('Sample inventory loaded', 'ok');
+            }
+
+            function refreshVenueDropdown() {
+                const venueSelect = $('venue-select');
+                const deviceSelect = $('device-select');
+                venueSelect.innerHTML = '';
+                deviceSelect.innerHTML = '<option value="">— Select location —</option>';
+                deviceSelect.disabled = true;
+                $('goto-matrix-btn').disabled = true;
+                $('device-summary').textContent = '';
+
+                if (!inventory.venues.length) {
+                    venueSelect.innerHTML = '<option value="">— No venues —</option>';
+                    venueSelect.disabled = true;
+                    return;
+                }
+
+                venueSelect.disabled = false;
+                venueSelect.innerHTML = '<option value="">— Select stadium —</option>';
+                for (const v of inventory.venues) {
+                    const opt = document.createElement('option');
+                    opt.value = v.id;
+                    opt.textContent = v.name;
+                    venueSelect.appendChild(opt);
+                }
+            }
+
+            function refreshDeviceDropdown() {
+                const venueId = $('venue-select').value;
+                const deviceSelect = $('device-select');
+                deviceSelect.innerHTML = '';
+                $('goto-matrix-btn').disabled = true;
+                $('device-summary').textContent = '';
+
+                if (!venueId) {
+                    deviceSelect.innerHTML = '<option value="">— Select location —</option>';
+                    deviceSelect.disabled = true;
+                    return;
+                }
+
+                const venue = inventory.venues.find((v) => v.id === venueId);
+                if (!venue) return;
+
+                deviceSelect.disabled = false;
+                deviceSelect.innerHTML = '<option value="">— Select switch —</option>';
+                for (const d of venue.devices) {
+                    const opt = document.createElement('option');
+                    opt.value = d.id;
+                    const stackLabel = d.isStack ? ` [stack ×${d.members.length}]` : '';
+                    opt.textContent = `${d.hostname} (${d.managementIp})${stackLabel}`;
+                    deviceSelect.appendChild(opt);
+                }
+            }
+
+            function updateDeviceSummary() {
+                const device = getDeviceBySelect();
+                const el = $('device-summary');
+                if (!device) { el.textContent = ''; return; }
+
+                const members = device.members.map((m) =>
+                    `Sw ${m.memberIndex}: ${m.portCount}-port${m.model ? ` (${m.model})` : ''}`
+                ).join(' · ');
+
+                el.innerHTML = `<strong>${device.hostname}</strong> @ ${device.managementIp}` +
+                    (device.isStack ? ` — Stack (${device.members.length} members)` : ' — Standalone') +
+                    `<br>${members}`;
+                $('goto-matrix-btn').disabled = false;
+            }
+
+            function getDeviceBySelect() {
+                const venueId = $('venue-select').value;
+                const deviceId = $('device-select').value;
+                if (!venueId || !deviceId) return null;
+                const venue = inventory.venues.find((v) => v.id === venueId);
+                return venue?.devices.find((d) => d.id === deviceId) || null;
+            }
+
+            function showScreen(n) {
+                $('screen-1').classList.toggle('active', n === 1);
+                $('screen-2').classList.toggle('active', n === 2);
+                $('step-pill-1').classList.toggle('active', n === 1);
+                $('step-pill-2').classList.toggle('active', n === 2);
+            }
+
+            function createPortButton(memberIndex, portNum) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                const pk = portKey(memberIndex, portNum);
+                btn.className = 'port';
+                btn.dataset.portKey = pk;
+                btn.textContent = String(portNum);
+
+                if (portNum >= BLOCKED_PORT_MIN) {
+                    btn.classList.add('blocked');
+                    btn.title = 'Ports 44–48 cannot be configured';
+                } else {
+                    btn.title = `Gi${pk} — click to select, Ctrl+click multi-select`;
+                    btn.addEventListener('click', (e) => onPortClick(pk, e));
+                }
+
+                const assign = portAssignments[pk];
+                if (assign?.templateKey) btn.classList.add('configured');
+                if (selectedPorts.has(pk)) btn.classList.add('selected');
+
+                return btn;
+            }
+
+            function appendPortsToGrid(grid, memberIndex, portCount) {
+                if (portCount === 48) {
+                    grid.classList.add('paired-48');
+                    for (let odd = 1; odd <= 47; odd += 2) {
+                        const pair = document.createElement('div');
+                        pair.className = 'port-pair';
+                        pair.appendChild(createPortButton(memberIndex, odd));
+                        pair.appendChild(createPortButton(memberIndex, odd + 1));
+                        grid.appendChild(pair);
+                    }
+                    return;
+                }
+
+                grid.classList.add('cols-12');
+                for (let p = 1; p <= portCount; p++) {
+                    grid.appendChild(createPortButton(memberIndex, p));
+                }
+            }
+
+            function renderPortMatrix() {
+                const device = getDevice();
+                const container = $('port-matrix-container');
+                container.innerHTML = '';
+                if (!device) {
+                    container.innerHTML = '<div class="empty-state">No device selected</div>';
+                    return;
+                }
+
+                $('active-device-label').textContent = `${device.hostname} · ${device.managementIp}`;
+
+                const bulkMember = $('bulk-member');
+                bulkMember.innerHTML = '';
+                for (const m of device.members) {
+                    const opt = document.createElement('option');
+                    opt.value = String(m.memberIndex);
+                    opt.textContent = `Switch ${m.memberIndex} (${m.portCount}-port)`;
+                    bulkMember.appendChild(opt);
+                }
+
+                for (const member of device.members) {
+                    const section = document.createElement('div');
+                    section.className = 'stack-member';
+                    section.innerHTML = `<h3>Switch ${member.memberIndex} <span>${member.portCount} ports · editable 1–${EDITABLE_PORT_MAX}</span></h3>`;
+
+                    const grid = document.createElement('div');
+                    grid.className = 'port-grid';
+                    grid.dataset.member = String(member.memberIndex);
+                    appendPortsToGrid(grid, member.memberIndex, member.portCount);
+
+                    section.appendChild(grid);
+                    container.appendChild(section);
+                }
+
+                generateCLI();
+            }
+
+            function onPortClick(pk, event) {
+                if (event.ctrlKey || event.metaKey) {
+                    if (selectedPorts.has(pk)) selectedPorts.delete(pk);
+                    else selectedPorts.add(pk);
+                } else {
+                    selectedPorts.clear();
+                    selectedPorts.add(pk);
+                }
+                lastFocusedPort = pk;
+                syncPortPanelFromSelection();
+                renderPortMatrix();
+            }
+
+            function syncPortPanelFromSelection() {
+                const label = $('edit-port-label');
+                const vlanInput = $('vlan-input');
+                const templateSelect = $('template-select');
+                const descInput = $('desc-input');
+                const applyBtn = $('apply-port-btn');
+                const clearBtn = $('clear-port-btn');
+
+                if (selectedPorts.size === 0) {
+                    label.textContent = 'Click an editable port (1–43)';
+                    vlanInput.value = '';
+                    vlanInput.disabled = true;
+                    templateSelect.disabled = true;
+                    descInput.disabled = true;
+                    applyBtn.disabled = true;
+                    clearBtn.disabled = true;
+                    populateTemplateDropdown('');
+                    return;
+                }
+
+                const keys = [...selectedPorts];
+                label.textContent = keys.length === 1
+                    ? `Editing GigabitEthernet${keys[0]}`
+                    : `Editing ${keys.length} ports: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '…' : ''}`;
+
+                vlanInput.disabled = false;
+                descInput.disabled = false;
+                applyBtn.disabled = false;
+                clearBtn.disabled = false;
+
+                const firstAssign = portAssignments[keys[0]];
+                vlanInput.value = firstAssign?.vlanId ?? '';
+                descInput.value = firstAssign?.description ?? '';
+                populateTemplateDropdown(vlanInput.value, firstAssign?.templateKey);
+            }
+
+            function populateTemplateDropdown(vlanId, selectedKey) {
+                const sel = $('template-select');
+                sel.innerHTML = '';
+                const vlan = String(vlanId).trim();
+                const matches = templatesForDropdown(vlanId);
+                const isGeneralList = !vlan || !/^\d+$/.test(vlan);
+
+                if (selectedPorts.size === 0) {
+                    sel.disabled = true;
+                    sel.innerHTML = '<option value="">— Select port first —</option>';
+                    return;
+                }
+
+                sel.disabled = false;
+
+                if (!matches.length) {
+                    sel.innerHTML = '<option value="">— No matching templates —</option>';
+                    return;
+                }
+
+                sel.innerHTML = isGeneralList
+                    ? '<option value="">— Select general template —</option>'
+                    : '<option value="">— Select template —</option>';
+                for (const t of matches) {
+                    const opt = document.createElement('option');
+                    opt.value = t.key;
+                    opt.textContent = t.key;
+                    sel.appendChild(opt);
+                }
+                if (selectedKey && matches.some((t) => t.key === selectedKey)) {
+                    sel.value = selectedKey;
+                }
+            }
+
+            function applyToSelection() {
+                const vlanId = $('vlan-input').value.trim();
+                const templateKey = $('template-select').value;
+                const description = $('desc-input').value.trim();
+
+                if (!selectedPorts.size) {
+                    toast('Select at least one port', 'err');
+                    return;
+                }
+                if (!templateKey) {
+                    toast('Select an interface template', 'err');
+                    return;
+                }
+                if (!vlanId && !isGeneralTemplateKey(templateKey)) {
+                    toast('VLAN ID is required for VLAN-specific templates', 'err');
+                    return;
+                }
+
+                const assignment = { vlanId, templateKey, description };
+                const validationErrors = validatePortAssignment(assignment);
+                if (validationErrors.length) {
+                    toast(validationErrors[0], 'err');
+                    return;
+                }
+
+                for (const pk of selectedPorts) {
+                    const parsed = parsePortKey(pk);
+                    if (!parsed || parsed.port > EDITABLE_PORT_MAX) continue;
+                    portAssignments[pk] = { vlanId, templateKey, description };
+                }
+
+                toast(`Applied to ${selectedPorts.size} port(s)`, 'ok');
+                renderPortMatrix();
+            }
+
+            function clearSelection() {
+                for (const pk of selectedPorts) {
+                    delete portAssignments[pk];
+                }
+                $('vlan-input').value = '';
+                $('desc-input').value = '';
+                populateTemplateDropdown('');
+                renderPortMatrix();
+                toast('Cleared selected ports', 'ok');
+            }
+
+            function getSourceAssignment() {
+                if (!lastFocusedPort) {
+                    toast('Select a configured source port first', 'err');
+                    return null;
+                }
+                const src = portAssignments[lastFocusedPort];
+                if (!src?.templateKey) {
+                    toast('Source port has no configuration', 'err');
+                    return null;
+                }
+                return src;
+            }
+
+            function bulkCopyToRange() {
+                const src = getSourceAssignment();
+                if (!src) return;
+
+                const member = parseInt($('bulk-member').value, 10);
+                let from = parseInt($('bulk-from').value, 10);
+                let to = parseInt($('bulk-to').value, 10);
+                if (from > to) [from, to] = [to, from];
+
+                let count = 0;
+                for (let p = from; p <= to && p <= EDITABLE_PORT_MAX; p++) {
+                    const pk = portKey(member, p);
+                    portAssignments[pk] = { ...src };
+                    count++;
+                }
+                toast(`Replicated to ${count} port(s) on switch ${member}`, 'ok');
+                renderPortMatrix();
+            }
+
+            function bulkCopyToSelected() {
+                const src = getSourceAssignment();
+                if (!src) return;
+                if (!selectedPorts.size) {
+                    toast('Select target port(s) with Ctrl+click', 'err');
+                    return;
+                }
+                let count = 0;
+                for (const pk of selectedPorts) {
+                    const parsed = parsePortKey(pk);
+                    if (!parsed || parsed.port > EDITABLE_PORT_MAX) continue;
+                    portAssignments[pk] = { ...src };
+                    count++;
+                }
+                toast(`Replicated to ${count} selected port(s)`, 'ok');
+                renderPortMatrix();
+            }
+
+            function generateCLI() {
+                const device = getDevice();
+                const out = $('cli-output');
+                if (!device) { out.value = ''; return; }
+
+                const lines = [];
+                lines.push(`! ${device.hostname} — ${device.managementIp}`);
+                lines.push(`! Generated ${new Date().toISOString()}`);
+                lines.push('!');
+
+                const keys = Object.keys(portAssignments).sort((a, b) => {
+                    const pa = parsePortKey(a);
+                    const pb = parsePortKey(b);
+                    if (!pa || !pb) return a.localeCompare(b);
+                    if (pa.member !== pb.member) return pa.member - pb.member;
+                    return pa.port - pb.port;
+                });
+
+                const validationErrors = [];
+                let compiledCount = 0;
+
+                for (const pk of keys) {
+                    const assign = portAssignments[pk];
+                    if (!assign?.templateKey) continue;
+                    const parsed = parsePortKey(pk);
+                    if (!parsed || parsed.port > EDITABLE_PORT_MAX) continue;
+
+                    const result = compileInterfaceBlock(pk, assign);
+                    if (!result.ok) {
+                        validationErrors.push(`! GigabitEthernet${pk}: ${result.errors.join(' ')}`);
+                        continue;
+                    }
+                    lines.push(...result.lines);
+                    compiledCount++;
+                }
+
+                if (validationErrors.length) {
+                    lines.splice(3, 0,
+                        '! VALIDATION ERRORS — correct before pasting to a live device',
+                        ...validationErrors,
+                        '!'
+                    );
+                    toast(`${validationErrors.length} port(s) failed validation — see CLI output`, 'err');
+                }
+
+                out.value = (compiledCount || validationErrors.length) ? lines.join('\n') : '';
+            }
+
+            async function handleInventoryFile(file) {
+                const text = await file.text();
+                let rows;
+                if (file.name.toLowerCase().endsWith('.json')) {
+                    const data = JSON.parse(text);
+                    rows = Array.isArray(data) ? data : (data.rows || data.devices || data.inventory || []);
+                } else {
+                    rows = parseCSV(text);
+                }
+                inventory = rowsToDevices(rows);
+                refreshVenueDropdown();
+                toast(`Loaded ${inventory.venues.length} venue(s)`, 'ok');
+            }
+
+            async function handleTemplatesFile(file) {
+                const text = await file.text();
+                templateCatalog = parseTemplatesFile(text);
+                initGeneralTemplates();
+                toast(`Loaded ${templateCatalog.size} interface template(s)`, 'ok');
+                if ($('vlan-input').value) {
+                    populateTemplateDropdown($('vlan-input').value, $('template-select').value);
+                }
+            }
+
+            // Events
+            $('inventory-file').addEventListener('change', async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                    await handleInventoryFile(file);
+                } catch (err) {
+                    toast(err.message || 'Failed to parse inventory', 'err');
+                }
+            });
+
+            $('templates-file').addEventListener('change', async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                    await handleTemplatesFile(file);
+                } catch (err) {
+                    toast(err.message || 'Failed to parse templates', 'err');
+                }
+            });
+
+            $('load-sample-btn').addEventListener('click', loadSampleData);
+
+            $('venue-select').addEventListener('change', () => {
+                refreshDeviceDropdown();
+            });
+
+            $('device-select').addEventListener('change', updateDeviceSummary);
+
+            $('goto-matrix-btn').addEventListener('click', () => {
+                const device = getDeviceBySelect();
+                if (!device) return;
+                activeDeviceId = device.id;
+                selectedPorts.clear();
+                lastFocusedPort = null;
+                portAssignments = {};
+                showScreen(2);
+                renderPortMatrix();
+                syncPortPanelFromSelection();
+            });
+
+            $('back-btn').addEventListener('click', () => showScreen(1));
+
+            $('vlan-input').addEventListener('input', () => {
+                const vlan = $('vlan-input').value;
+                const sel = $('template-select');
+                const keep = sel.value && (
+                    isGeneralTemplateKey(sel.value) && (!vlan || !/^\d+$/.test(vlan.trim()))
+                    || templatesForVlan(vlan).some((t) => t.key === sel.value)
+                );
+                populateTemplateDropdown(vlan, keep ? sel.value : '');
+            });
+
+            $('apply-port-btn').addEventListener('click', applyToSelection);
+            $('clear-port-btn').addEventListener('click', clearSelection);
+            $('bulk-apply-btn').addEventListener('click', bulkCopyToRange);
+            $('bulk-selection-btn').addEventListener('click', bulkCopyToSelected);
+
+            $('copy-cli-btn').addEventListener('click', async () => {
+                const text = $('cli-output').value;
+                if (!text) { toast('Nothing to copy', 'err'); return; }
+                try {
+                    await navigator.clipboard.writeText(text);
+                    toast('CLI copied to clipboard', 'ok');
+                } catch {
+                    toast('Clipboard access denied', 'err');
+                }
+            });
+
+            // Init: built-in general templates always available; sample inventory optional
+            initGeneralTemplates();
+            loadSampleData();
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network Inventory Comparator — V5 vs V6</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --ok: #22c55e;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+    h1 { font-size: 1.45rem; font-weight: 600; margin: 0 0 0.35rem; }
+    .lead { color: var(--muted); font-size: 0.95rem; margin: 0 0 1.5rem; }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .panel h2 { font-size: 1rem; margin: 0 0 1rem; }
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 640px) { .upload-grid { grid-template-columns: 1fr; } }
+    label.field { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+    input[type="file"] {
+      width: 100%;
+      padding: 0.5rem;
+      background: var(--surface2);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    select {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+    }
+    select:disabled { opacity: 0.5; cursor: not-allowed; }
+    .sheet-pick { margin-top: 0.75rem; }
+    .options { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+    .options label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
+    button {
+      margin-top: 1rem;
+      padding: 0.6rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+    .error {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 6px;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .error.visible { display: block; }
+    #results { display: none; }
+    #results.visible { display: block; }
+    .banner {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.25rem;
+      font-weight: 500;
+    }
+    .banner.clean { background: rgba(34, 197, 94, 0.12); color: var(--ok); border: 1px solid rgba(34, 197, 94, 0.35); }
+    .banner.issues { background: rgba(239, 68, 68, 0.1); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.35); }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+    .card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .card .value { font-size: 1.5rem; font-weight: 700; }
+    .card.ok .value { color: var(--ok); }
+    .card.bad .value { color: var(--danger); }
+    section.report {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    section.report.primary { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15); }
+    section.report h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
+    section.report h2 .num { color: var(--accent); margin-right: 0.3rem; }
+    section.report .desc { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
+    h3.sub { font-size: 0.9rem; color: var(--muted); margin: 1rem 0 0.5rem; }
+    table.delta { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    table.delta th, table.delta td {
+      text-align: left;
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    table.delta th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+      line-height: 1.3;
+      max-width: 240px;
+    }
+    .issue-changed .badge { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+    .issue-v5 .badge { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+    .issue-v6 .badge { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .issue-ambiguous .badge { background: rgba(168, 85, 247, 0.2); color: #d8b4fe; }
+    p.ok { color: var(--ok); margin: 0; }
+    p.total { margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--muted); }
+    .file-meta { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+    .compare-pairing {
+      margin-top: 0.5rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--surface2);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .compare-pairing strong { color: var(--text); font-weight: 600; }
+    .results-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+    .results-meta code {
+      font-size: 0.8rem;
+      background: var(--surface2);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+    .delta-report-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 0;
+      margin: 0;
+    }
+    .btn-link:hover { text-decoration: underline; }
+    details.delta-section {
+      margin-bottom: 0.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    details.delta-section[open] { border-color: rgba(59, 130, 246, 0.35); }
+    details.delta-section summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.65rem 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    details.delta-section summary::-webkit-details-marker { display: none; }
+    details.delta-section summary::marker { display: none; }
+    .summary-chevron {
+      color: var(--muted);
+      font-size: 0.65rem;
+      transition: transform 0.15s ease;
+      flex-shrink: 0;
+    }
+    details.delta-section[open] .summary-chevron { transform: rotate(90deg); }
+    .section-title { flex: 1; }
+    .section-count {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+    }
+    .delta-section-body {
+      padding: 0 0.75rem 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    details.delta-section.section-changed { border-left: 3px solid var(--danger); }
+    details.delta-section.section-v6 { border-left: 3px solid var(--accent); }
+    details.delta-section.section-other { border-left: 3px solid #f59e0b; }
+    tr.issue-changed td:nth-child(3), tr.issue-changed td:nth-child(4) { background: rgba(239, 68, 68, 0.08); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Network Inventory Comparator</h1>
+    <p class="lead">
+      Compares <strong>Blue network</strong> rows only (column AG contains “Blue network”).
+      Key-based lookups — row order is ignored. Analysis 1: request code → component (D→W).
+      Analysis 2: component → VLAN (W → last data column). Optional: upload a config templates TXT to compare built templates vs V6 requests.
+    </p>
+
+    <div class="panel">
+      <h2>Upload files</h2>
+      <div class="upload-grid">
+        <div>
+          <label class="field" for="file-v5">V5 inventory (.xlsx, .xls)</label>
+          <input type="file" id="file-v5" accept=".xlsx,.xls,.xlsm,.csv">
+          <div class="file-meta" id="meta-v5"></div>
+          <div class="sheet-pick">
+            <label class="field" for="sheet-v5">V5 worksheet</label>
+            <select id="sheet-v5" disabled>
+              <option value="">— upload V5 file —</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="field" for="file-v6">V6 inventory (.xlsx, .xls)</label>
+          <input type="file" id="file-v6" accept=".xlsx,.xls,.xlsm,.csv">
+          <div class="file-meta" id="meta-v6"></div>
+          <div class="sheet-pick">
+            <label class="field" for="sheet-v6">V6 worksheet</label>
+            <select id="sheet-v6" disabled>
+              <option value="">— upload V6 file —</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="compare-pairing" id="pairing-hint" hidden>
+        Comparing <strong id="hint-v5">—</strong> (V5) with <strong id="hint-v6">—</strong> (V6)
+      </div>
+      <div class="options">
+        <label><input type="checkbox" id="skip-header" checked> First row is column headers (skip row 1)</label>
+      </div>
+      <div class="sheet-pick" style="margin-top: 1rem;">
+        <label class="field" for="file-templates">Config templates made (.txt) — optional</label>
+        <input type="file" id="file-templates" accept=".txt,text/plain">
+        <div class="file-meta" id="meta-templates">Cisco-style file with lines like <code>template VLAN72_INTERFACE_TEMPLATE_50Mbps</code></div>
+      </div>
+      <button type="button" id="btn-compare" disabled>Compare V5 vs V6</button>
+      <div class="error" id="error-box" role="alert"></div>
+    </div>
+
+    <div id="results">
+      <p class="results-meta" id="results-meta"></p>
+      <div class="banner" id="banner"></div>
+      <div class="cards" id="summary-cards"></div>
+      <section class="report primary" id="section-a1"></section>
+      <section class="report" id="section-a2"></section>
+      <section class="report" id="section-a3" hidden></section>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  const COL_REQUEST = "D";
+  const COL_COMPONENT = "W";
+  const COL_NETWORK = "AG";
+  /** Rows where column AG contains this text (case-insensitive). */
+  const BLUE_NETWORK_TEXT = "blue network";
+
+  const ISSUE_LABELS = {
+    changed: "Value changed between V5 and V6",
+    only_in_v5: "Present in V5 only (removed or re-keyed in V6)",
+    only_in_v6: "New in V6 only (not present in V5)",
+    ambiguous_in_v5: "Multiple distinct values for same key in V5 (copy/paste error?)",
+    ambiguous_in_v6: "Multiple distinct values for same key in V6 (copy/paste error?)",
+    template_missing: "Requested in V6 but not found in config TXT",
+    template_extra: "Present in config TXT but not requested in V6",
+    template_unresolved: "Could not derive template name from V6 row",
+  };
+
+  let workbookV5 = null;
+  let workbookV6 = null;
+  let configTemplatesText = null;
+  let shouldAutoMatchSheets = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  function colLetterToIndex(letter) {
+    let index = 0;
+    for (const c of letter.toUpperCase()) {
+      index = index * 26 + (c.charCodeAt(0) - 64);
+    }
+    return index - 1;
+  }
+
+  function indexToColLetter(index) {
+    let n = index + 1;
+    let letters = "";
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      letters = String.fromCharCode(65 + rem) + letters;
+      n = Math.floor((n - 1) / 26);
+    }
+    return letters;
+  }
+
+  function dataRows(rows, skipHeader) {
+    return skipHeader ? rows.slice(1) : rows;
+  }
+
+  /** Rightmost column index that contains any value (VLAN column) within filtered rows. */
+  function detectLastDataColumnIndex(rows, skipHeader) {
+    let maxIdx = -1;
+    for (const row of dataRows(rows, skipHeader)) {
+      for (let i = 0; i < row.length; i++) {
+        if (normalizeCell(row[i]) !== null) {
+          maxIdx = Math.max(maxIdx, i);
+        }
+      }
+    }
+    if (maxIdx < 0) {
+      throw new Error("Could not detect VLAN column: no data cells found.");
+    }
+    return maxIdx;
+  }
+
+  function getColumnByIndex(rows, colIdx, skipHeader) {
+    return dataRows(rows, skipHeader).map((row) =>
+      row[colIdx] !== undefined ? row[colIdx] : ""
+    );
+  }
+
+  function normalizeCell(value) {
+    if (value == null || value === "") return null;
+    const text = String(value).trim();
+    return text || null;
+  }
+
+  function formatValueSet(values) {
+    const arr = [...values].sort();
+    if (arr.length === 0) return "(missing)";
+    if (arr.length === 1) return arr[0];
+    return arr.join(" | ");
+  }
+
+  function setsEqual(a, b) {
+    if (a.size !== b.size) return false;
+    for (const x of a) if (!b.has(x)) return false;
+    return true;
+  }
+
+  function esc(text) {
+    const d = document.createElement("div");
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  function issueClass(issue) {
+    const map = {
+      changed: "issue-changed",
+      only_in_v5: "issue-v5",
+      only_in_v6: "issue-v6",
+      template_missing: "issue-changed",
+      template_extra: "issue-v5",
+      template_unresolved: "issue-ambiguous",
+      ambiguous_in_v5: "issue-ambiguous",
+      ambiguous_in_v6: "issue-ambiguous",
+    };
+    return map[issue] || "issue-other";
+  }
+
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: "array", cellDates: true });
+          resolve(wb);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function loadSheet(wb, sheetName) {
+    const name = sheetName || wb.SheetNames[0];
+    const sheet = wb.Sheets[name];
+    if (!sheet) throw new Error(`Worksheet not found: ${name}`);
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+    return { name, sheet, rows };
+  }
+
+  function isBlueNetworkCell(value) {
+    const text = normalizeCell(value);
+    if (!text) return false;
+    return text.toLowerCase().includes(BLUE_NETWORK_TEXT);
+  }
+
+  function isBlueNetworkRow(row) {
+    const networkIdx = colLetterToIndex(COL_NETWORK);
+    return isBlueNetworkCell(row[networkIdx]);
+  }
+
+  /** Keep only rows where column AG contains “Blue network”. */
+  function filterBlueNetworkRows(loaded, skipHeader) {
+    const { rows } = loaded;
+    const body = dataRows(rows, skipHeader);
+    const filteredBody = body.filter(isBlueNetworkRow);
+
+    const outRows = skipHeader && rows.length ? [rows[0], ...filteredBody] : filteredBody;
+    return {
+      rows: outRows,
+      includedCount: filteredBody.length,
+      totalCount: body.length,
+    };
+  }
+
+  function getColumn(rows, letter, skipHeader) {
+    const idx = colLetterToIndex(letter);
+    const rowsData = dataRows(rows, skipHeader);
+    if (rowsData.length && rowsData[0].length <= idx) {
+      throw new Error(
+        `Column ${letter} (position ${idx + 1}) is missing. ` +
+        `Sheet has ${rowsData[0].length} column(s).`
+      );
+    }
+    return getColumnByIndex(rows, idx, skipHeader);
+  }
+
+  function buildKeyToValues(keys, values) {
+    const mapping = new Map();
+    for (let i = 0; i < keys.length; i++) {
+      const key = normalizeCell(keys[i]);
+      if (!key) continue;
+      const value = normalizeCell(values[i]);
+      if (!value) continue;
+      if (!mapping.has(key)) mapping.set(key, new Set());
+      mapping.get(key).add(value);
+    }
+    const frozen = new Map();
+    const ambiguous = [];
+    for (const [key, set] of mapping) {
+      frozen.set(key, new Set(set));
+      if (set.size > 1) ambiguous.push([key, new Set(set)]);
+    }
+    return { map: frozen, ambiguous };
+  }
+
+  function compareMappings(v5Map, v6Map, v5Amb, v6Amb, includeV6Only) {
+    const deltas = [];
+
+    for (const [key, values] of v5Amb) {
+      deltas.push({
+        key,
+        v5: values,
+        v6: v6Map.get(key) || new Set(),
+        issue: "ambiguous_in_v5",
+      });
+    }
+    const ambV5Keys = new Set(v5Amb.map(([k]) => k));
+    for (const [key, values] of v6Amb) {
+      if (ambV5Keys.has(key)) continue;
+      if (!v5Map.has(key)) {
+        if (includeV6Only) {
+          deltas.push({
+            key,
+            v5: new Set(),
+            v6: values,
+            issue: "ambiguous_in_v6",
+          });
+        }
+        continue;
+      }
+      deltas.push({
+        key,
+        v5: v5Map.get(key) || new Set(),
+        v6: values,
+        issue: "ambiguous_in_v6",
+      });
+    }
+
+    const seenAmb = new Set(deltas.map((d) => d.key));
+    const sharedKeys = [...v5Map.keys()].filter((k) => v6Map.has(k)).sort();
+
+    for (const key of sharedKeys) {
+      if (seenAmb.has(key)) continue;
+      const v5Vals = v5Map.get(key) || new Set();
+      const v6Vals = v6Map.get(key) || new Set();
+      if (setsEqual(v5Vals, v6Vals)) continue;
+      deltas.push({ key, v5: v5Vals, v6: v6Vals, issue: "changed" });
+    }
+
+    for (const key of [...v5Map.keys()].sort()) {
+      if (seenAmb.has(key) || v6Map.has(key)) continue;
+      deltas.push({
+        key,
+        v5: v5Map.get(key) || new Set(),
+        v6: new Set(),
+        issue: "only_in_v5",
+      });
+    }
+
+    if (includeV6Only) {
+      for (const key of [...v6Map.keys()].sort()) {
+        if (seenAmb.has(key) || v5Map.has(key)) continue;
+        deltas.push({
+          key,
+          v5: new Set(),
+          v6: v6Map.get(key) || new Set(),
+          issue: "only_in_v6",
+        });
+      }
+    }
+    return deltas;
+  }
+
+  function runAnalysis(rowsV5, rowsV6, keyCol, valCol, skipHeader, includeV6Only) {
+    const v5 = buildKeyToValues(
+      getColumn(rowsV5, keyCol, skipHeader),
+      getColumn(rowsV5, valCol, skipHeader)
+    );
+    const v6 = buildKeyToValues(
+      getColumn(rowsV6, keyCol, skipHeader),
+      getColumn(rowsV6, valCol, skipHeader)
+    );
+    return compareMappings(v5.map, v6.map, v5.ambiguous, v6.ambiguous, includeV6Only);
+  }
+
+  /** Analysis 2: Component (W) -> VLAN (last column with data). */
+  function runAnalysisComponentToVlan(rowsV5, rowsV6, skipHeader) {
+    const vlanIdxV5 = detectLastDataColumnIndex(rowsV5, skipHeader);
+    const vlanIdxV6 = detectLastDataColumnIndex(rowsV6, skipHeader);
+    const v5 = buildKeyToValues(
+      getColumn(rowsV5, COL_COMPONENT, skipHeader),
+      getColumnByIndex(rowsV5, vlanIdxV5, skipHeader)
+    );
+    const v6 = buildKeyToValues(
+      getColumn(rowsV6, COL_COMPONENT, skipHeader),
+      getColumnByIndex(rowsV6, vlanIdxV6, skipHeader)
+    );
+    return {
+      deltas: compareMappings(v5.map, v6.map, v5.ambiguous, v6.ambiguous, true),
+      vlanColV5: indexToColLetter(vlanIdxV5),
+      vlanColV6: indexToColLetter(vlanIdxV6),
+    };
+  }
+
+  /** Parse Cisco config TXT: lines starting with `template NAME`. */
+  function parseTemplatesFromTxt(text) {
+    const names = new Set();
+    const blocks = text.split(/^!/m);
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed.toLowerCase().startsWith("template ")) continue;
+      const m = trimmed.match(/^template\s+(\S+)/i);
+      if (m) names.add(m[1].toUpperCase());
+    }
+    if (!names.size) {
+      for (const line of text.split(/\r?\n/)) {
+        const m = line.trim().match(/^template\s+(\S+)/i);
+        if (m) names.add(m[1].toUpperCase());
+      }
+    }
+    return names;
+  }
+
+  function extractVlanFromTemplateKey(key) {
+    let m = key.match(/^Template_VLAN_(\d+)_/i);
+    if (m) return m[1];
+    m = key.match(/^VLAN(\d+)_INTERFACE_TEMPLATE/i);
+    if (m) return m[1];
+    return null;
+  }
+
+  function extractRateMbpsFromText(text) {
+    if (!text) return null;
+    const m = text.match(/(\d+)\s*Mbps/i);
+    return m ? m[1] : null;
+  }
+
+  function parseVlanId(text) {
+    if (!text) return null;
+    const t = text.trim();
+    if (/^\d+$/.test(t)) return t;
+    const m = t.match(/(?:vlan\s*)?(\d+)/i);
+    return m ? m[1] : null;
+  }
+
+  function deriveExpectedTemplateName(vlanId, rateMbps) {
+    if (!vlanId) return null;
+    return rateMbps
+      ? `VLAN${vlanId}_INTERFACE_TEMPLATE_${rateMbps}Mbps`.toUpperCase()
+      : `VLAN${vlanId}_INTERFACE_TEMPLATE`.toUpperCase();
+  }
+
+  function extractRequestedTemplate(row, vlanIdx) {
+    const reqIdx = colLetterToIndex(COL_REQUEST);
+    const compIdx = colLetterToIndex(COL_COMPONENT);
+    const request = normalizeCell(row[reqIdx]);
+    const component = normalizeCell(row[compIdx]);
+    const vlanRaw = normalizeCell(row[vlanIdx]);
+
+    if (component && /INTERFACE_TEMPLATE/i.test(component)) {
+      return {
+        request,
+        component,
+        vlan: vlanRaw,
+        expected: component.toUpperCase(),
+        vlanId: extractVlanFromTemplateKey(component),
+        rateMbps: extractRateMbpsFromText(component),
+      };
+    }
+
+    const vlanId = parseVlanId(vlanRaw) || parseVlanId(component);
+    const rateMbps = extractRateMbpsFromText(component) || extractRateMbpsFromText(vlanRaw);
+    return {
+      request,
+      component,
+      vlan: vlanRaw,
+      expected: deriveExpectedTemplateName(vlanId, rateMbps),
+      vlanId,
+      rateMbps,
+    };
+  }
+
+  function templateMatchesRequest(builtKey, req) {
+    const built = builtKey.toUpperCase();
+    if (req.expected && built === req.expected) return true;
+    if (!req.vlanId) return false;
+    const prefix = `VLAN${req.vlanId}_INTERFACE_TEMPLATE`;
+    if (!built.startsWith(prefix)) return false;
+    if (req.rateMbps) {
+      return new RegExp(`_${req.rateMbps}Mbps$`, "i").test(built);
+    }
+    return true;
+  }
+
+  function findMatchingBuilt(builtSet, req) {
+    for (const name of builtSet) {
+      if (templateMatchesRequest(name, req)) return name;
+    }
+    return null;
+  }
+
+  /** Analysis 3: Config TXT templates vs V6 Blue network requests. */
+  function runTemplateAnalysis(configText, rowsV6, skipHeader) {
+    const builtSet = parseTemplatesFromTxt(configText);
+    const vlanIdx = detectLastDataColumnIndex(rowsV6, skipHeader);
+    const requests = dataRows(rowsV6, skipHeader).map((row) =>
+      extractRequestedTemplate(row, vlanIdx)
+    );
+
+    const missing = [];
+    const unresolved = [];
+    const matched = [];
+
+    for (const req of requests) {
+      if (!req.expected && !req.vlanId) {
+        unresolved.push({
+          key: req.request || req.component || "(unknown row)",
+          issue: "template_unresolved",
+          request: req.request || "(missing)",
+          component: req.component || "(missing)",
+          vlan: req.vlan || "(missing)",
+          expected: "(could not derive)",
+          built: "(none)",
+        });
+        continue;
+      }
+      const built = findMatchingBuilt(builtSet, req);
+      const label = req.expected || deriveExpectedTemplateName(req.vlanId, req.rateMbps);
+      if (built) {
+        matched.push({ req, built, label });
+      } else {
+        missing.push({
+          key: label || req.component || req.request,
+          issue: "template_missing",
+          request: req.request || "(missing)",
+          component: req.component || "(missing)",
+          vlan: req.vlan || "(missing)",
+          expected: label || "(unknown)",
+          built: "(not in TXT)",
+        });
+      }
+    }
+
+    const extra = [];
+    for (const name of builtSet) {
+      const hasReq = requests.some((req) => templateMatchesRequest(name, req));
+      if (!hasReq) {
+        extra.push({
+          key: name,
+          issue: "template_extra",
+          request: "(not requested)",
+          component: "(not requested)",
+          vlan: extractVlanFromTemplateKey(name) || "(n/a)",
+          expected: "(n/a)",
+          built: name,
+        });
+      }
+    }
+
+    extra.sort((a, b) => a.key.localeCompare(b.key));
+    missing.sort((a, b) => a.key.localeCompare(b.key));
+    unresolved.sort((a, b) => a.key.localeCompare(b.key));
+
+    return {
+      builtCount: builtSet.size,
+      requestCount: requests.length,
+      matchedCount: matched.length,
+      missing,
+      extra,
+      unresolved,
+      vlanCol: indexToColLetter(vlanIdx),
+    };
+  }
+
+  function renderTemplateRows(items) {
+    return items
+      .map(
+        (d) =>
+          `<tr class="${issueClass(d.issue)}">` +
+          `<td>${esc(d.key)}</td>` +
+          `<td>${esc(d.request)}</td>` +
+          `<td>${esc(d.component)}</td>` +
+          `<td>${esc(d.vlan)}</td>` +
+          `<td>${esc(d.expected)}</td>` +
+          `<td>${esc(d.built)}</td>` +
+          `<td><span class="badge ${issueClass(d.issue)}">${esc(ISSUE_LABELS[d.issue] || d.issue)}</span></td>` +
+          `</tr>`
+      )
+      .join("");
+  }
+
+  function renderTemplateSection(title, items, sectionClass) {
+    if (!items.length) return "";
+    const header =
+      `<thead><tr>` +
+      `<th>Template</th><th>Request (D)</th><th>Component (W)</th><th>VLAN</th>` +
+      `<th>Expected</th><th>In config TXT</th><th>Issue</th>` +
+      `</tr></thead>`;
+    return (
+      `<details class="delta-section ${sectionClass}">` +
+      `<summary>` +
+      `<span class="summary-chevron" aria-hidden="true">▶</span>` +
+      `<span class="section-title">${esc(title)}</span>` +
+      `<span class="section-count">${items.length}</span>` +
+      `</summary>` +
+      `<div class="delta-section-body">` +
+      `<table class="delta">${header}<tbody>${renderTemplateRows(items)}</tbody></table>` +
+      `</div></details>`
+    );
+  }
+
+  function renderTemplateComparison(result) {
+    const deltas = result.missing.length + result.extra.length + result.unresolved.length;
+    if (!deltas && !result.requestCount) {
+      return '<p class="ok">No Blue network rows in V6 to compare.</p>';
+    }
+
+    let html =
+      `<div class="delta-report-actions">` +
+      `<button type="button" class="btn-link" data-expand-all-sections>Expand all sections</button>` +
+      `<button type="button" class="btn-link" data-collapse-all-sections>Collapse all sections</button>` +
+      `</div>` +
+      `<p class="desc" style="margin:0 0 0.75rem;color:var(--muted);font-size:0.85rem;">` +
+      `Parsed <strong>${result.builtCount}</strong> template(s) from TXT · ` +
+      `<strong>${result.requestCount}</strong> Blue network request row(s) in V6 · ` +
+      `<strong>${result.matchedCount}</strong> matched` +
+      `</p>`;
+
+    html += renderTemplateSection("Missing from config TXT", result.missing, "section-changed");
+    html += renderTemplateSection("Could not derive template", result.unresolved, "section-other");
+    html += renderTemplateSection("Extra in config TXT (not in V6)", result.extra, "section-v6");
+
+    if (!deltas) {
+      html += '<p class="ok">All V6 requests have a matching template in the config file.</p>';
+    } else {
+      html += `<p class="total">Template issues: <strong>${deltas}</strong> — expand a section to see all items</p>`;
+    }
+    return html;
+  }
+
+  function renderDeltaRows(items, keyLabel, valueLabel) {
+    return items
+      .map(
+        (d) =>
+          `<tr class="${issueClass(d.issue)}">` +
+          `<td>${esc(d.key)}</td>` +
+          `<td><span class="badge ${issueClass(d.issue)}">${esc(ISSUE_LABELS[d.issue] || d.issue)}</span></td>` +
+          `<td>${esc(formatValueSet(d.v5))}</td>` +
+          `<td>${esc(formatValueSet(d.v6))}</td>` +
+          `</tr>`
+      )
+      .join("");
+  }
+
+  function renderDeltaSection(title, items, keyLabel, valueLabel, sectionClass) {
+    if (!items.length) return "";
+    const header =
+      `<thead><tr>` +
+      `<th>${esc(keyLabel)}</th><th>Issue</th>` +
+      `<th>V5 ${esc(valueLabel)}</th><th>V6 ${esc(valueLabel)}</th>` +
+      `</tr></thead>`;
+    return (
+      `<details class="delta-section ${sectionClass}">` +
+      `<summary>` +
+      `<span class="summary-chevron" aria-hidden="true">▶</span>` +
+      `<span class="section-title">${esc(title)}</span>` +
+      `<span class="section-count">${items.length}</span>` +
+      `</summary>` +
+      `<div class="delta-section-body">` +
+      `<table class="delta">${header}<tbody>${renderDeltaRows(items, keyLabel, valueLabel)}</tbody></table>` +
+      `</div></details>`
+    );
+  }
+
+  function renderTable(deltas, keyLabel, valueLabel) {
+    if (!deltas.length) return '<p class="ok">No mismatches found.</p>';
+
+    const changed = deltas.filter((d) => d.issue === "changed");
+    const v6Only = deltas.filter((d) => d.issue === "only_in_v6");
+    const other = deltas.filter(
+      (d) => d.issue !== "changed" && d.issue !== "only_in_v6"
+    );
+
+    let html =
+      `<div class="delta-report-actions">` +
+      `<button type="button" class="btn-link" data-expand-all-sections>Expand all sections</button>` +
+      `<button type="button" class="btn-link" data-collapse-all-sections>Collapse all sections</button>` +
+      `</div>`;
+    html += renderDeltaSection("Changed", changed, keyLabel, valueLabel, "section-changed");
+    html += renderDeltaSection("New in V6", v6Only, keyLabel, valueLabel, "section-v6");
+    html += renderDeltaSection("Other issues", other, keyLabel, valueLabel, "section-other");
+    html += `<p class="total">Total flagged: <strong>${deltas.length}</strong> — expand a section to see all items</p>`;
+    return html;
+  }
+
+  function bindDeltaControls(root) {
+    root.addEventListener("click", (e) => {
+      const expandAll = e.target.closest("[data-expand-all-sections]");
+      if (expandAll) {
+        const scope = expandAll.closest("section.report") || root;
+        scope.querySelectorAll("details.delta-section").forEach((el) => {
+          el.open = true;
+        });
+        return;
+      }
+      const collapseAll = e.target.closest("[data-collapse-all-sections]");
+      if (collapseAll) {
+        const scope = collapseAll.closest("section.report") || root;
+        scope.querySelectorAll("details.delta-section").forEach((el) => {
+          el.open = false;
+        });
+      }
+    });
+  }
+
+  function showError(msg) {
+    const box = $("error-box");
+    box.textContent = msg;
+    box.classList.add("visible");
+  }
+
+  function clearError() {
+    $("error-box").classList.remove("visible");
+  }
+
+  function populateSheetSelect(selectId, wb, emptyLabel) {
+    const sel = $(selectId);
+    const previous = sel.value;
+    if (!wb) {
+      sel.disabled = true;
+      sel.innerHTML = `<option value="">${esc(emptyLabel)}</option>`;
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = wb.SheetNames.map(
+      (name) => `<option value="${esc(name)}">${esc(name)}</option>`
+    ).join("");
+    if (previous && wb.SheetNames.includes(previous)) {
+      sel.value = previous;
+    }
+  }
+
+  function pickMatchingSheet() {
+    if (!shouldAutoMatchSheets || !workbookV5 || !workbookV6) return;
+    shouldAutoMatchSheets = false;
+    const selV5 = $("sheet-v5");
+    const selV6 = $("sheet-v6");
+    const shared = workbookV5.SheetNames.filter((n) =>
+      workbookV6.SheetNames.includes(n)
+    );
+    if (shared.length) {
+      selV5.value = shared[0];
+      selV6.value = shared[0];
+    }
+  }
+
+  function updateSheetSelects() {
+    populateSheetSelect("sheet-v5", workbookV5, "— upload V5 file —");
+    populateSheetSelect("sheet-v6", workbookV6, "— upload V6 file —");
+    if (workbookV5 && workbookV6) pickMatchingSheet();
+    updatePairingHint();
+  }
+
+  function updatePairingHint() {
+    const hint = $("pairing-hint");
+    const v5Sheet = $("sheet-v5").value;
+    const v6Sheet = $("sheet-v6").value;
+    if (workbookV5 && workbookV6 && v5Sheet && v6Sheet) {
+      $("hint-v5").textContent = v5Sheet;
+      $("hint-v6").textContent = v6Sheet;
+      hint.hidden = false;
+    } else {
+      hint.hidden = true;
+    }
+  }
+
+  function updateCompareButton() {
+    const ready =
+      workbookV5 &&
+      workbookV6 &&
+      $("sheet-v5").value &&
+      $("sheet-v6").value;
+    $("btn-compare").disabled = !ready;
+  }
+
+  async function onFileChange(which, input) {
+    const file = input.files[0];
+    const meta = $(which === "v5" ? "meta-v5" : "meta-v6");
+    if (!file) {
+      if (which === "v5") workbookV5 = null;
+      else workbookV6 = null;
+      meta.textContent = "";
+      updateSheetSelects();
+      updateCompareButton();
+      return;
+    }
+    try {
+      const wb = await readFile(file);
+      if (which === "v5") workbookV5 = wb;
+      else workbookV6 = wb;
+      if (workbookV5 && workbookV6) shouldAutoMatchSheets = true;
+      const sheets = wb.SheetNames.length;
+      meta.textContent = `${file.name} · ${sheets} worksheet${sheets === 1 ? "" : "s"}`;
+      updateSheetSelects();
+      updateCompareButton();
+      clearError();
+    } catch (err) {
+      if (which === "v5") workbookV5 = null;
+      else workbookV6 = null;
+      meta.textContent = "";
+      updateSheetSelects();
+      showError(`Could not read ${file.name}: ${err.message}`);
+      updateCompareButton();
+    }
+  }
+
+  function runCompare() {
+    clearError();
+    const skipHeader = $("skip-header").checked;
+    const sheetV5 = $("sheet-v5").value;
+    const sheetV6 = $("sheet-v6").value;
+
+    if (!sheetV5 || !sheetV6) {
+      showError("Select a worksheet from both V5 and V6.");
+      return;
+    }
+
+    try {
+      const loadedV5 = loadSheet(workbookV5, sheetV5);
+      const loadedV6 = loadSheet(workbookV6, sheetV6);
+      const filtV5 = filterBlueNetworkRows(loadedV5, skipHeader);
+      const filtV6 = filterBlueNetworkRows(loadedV6, skipHeader);
+
+      if (!filtV5.includedCount) {
+        throw new Error(
+          'No Blue network rows found in V5. Column AG must contain "Blue network". Other rows are ignored.'
+        );
+      }
+      if (!filtV6.includedCount) {
+        throw new Error(
+          'No Blue network rows found in V6. Column AG must contain "Blue network". Other rows are ignored.'
+        );
+      }
+
+      const rowsV5 = filtV5.rows;
+      const rowsV6 = filtV6.rows;
+
+      const analysis1 = runAnalysis(rowsV5, rowsV6, COL_REQUEST, COL_COMPONENT, skipHeader, false);
+      const analysis2Result = runAnalysisComponentToVlan(rowsV5, rowsV6, skipHeader);
+      const analysis2 = analysis2Result.deltas;
+
+      let analysis3 = null;
+      let templateDeltaCount = 0;
+      if (configTemplatesText) {
+        analysis3 = runTemplateAnalysis(configTemplatesText, rowsV6, skipHeader);
+        templateDeltaCount =
+          analysis3.missing.length + analysis3.extra.length + analysis3.unresolved.length;
+      }
+
+      const total = analysis1.length + analysis2.length + templateDeltaCount;
+
+      $("results-meta").innerHTML =
+        `Worksheets compared: V5 <code>${esc(sheetV5)}</code> vs V6 <code>${esc(sheetV6)}</code>` +
+        `<br>Scope: <strong>Blue network rows only</strong> (column <code>AG</code> contains “Blue network”). ` +
+        `All other rows are excluded.` +
+        `<br>Rows compared: V5 <strong>${filtV5.includedCount}</strong> of ${filtV5.totalCount}, ` +
+        `V6 <strong>${filtV6.includedCount}</strong> of ${filtV6.totalCount}` +
+        `<br>VLAN column (last column with data): V5 col <code>${esc(analysis2Result.vlanColV5)}</code>, ` +
+        `V6 col <code>${esc(analysis2Result.vlanColV6)}</code>` +
+        (analysis3
+          ? `<br>Template check: <strong>${analysis3.builtCount}</strong> in TXT, ` +
+            `<strong>${analysis3.matchedCount}</strong> matched to V6 requests (col <code>${esc(analysis3.vlanCol)}</code> VLAN)`
+          : "");
+
+      $("banner").className = "banner " + (total === 0 ? "clean" : "issues");
+      $("banner").textContent =
+        total === 0
+          ? "No configuration deltas detected."
+          : `${total} delta(s) require review.`;
+
+      $("summary-cards").innerHTML =
+        `<div class="card ${analysis1.length ? "bad" : "ok"}"><div class="label">Analysis 1</div><div class="value">${analysis1.length}</div></div>` +
+        `<div class="card ${analysis2.length ? "bad" : "ok"}"><div class="label">Analysis 2</div><div class="value">${analysis2.length}</div></div>` +
+        (analysis3
+          ? `<div class="card ${templateDeltaCount ? "bad" : "ok"}"><div class="label">Templates</div><div class="value">${templateDeltaCount}</div></div>`
+          : "") +
+        `<div class="card"><div class="label">V5 Blue network</div><div class="value">${filtV5.includedCount}</div></div>` +
+        `<div class="card"><div class="label">V6 Blue network</div><div class="value">${filtV6.includedCount}</div></div>`;
+
+      $("section-a1").innerHTML =
+        `<h2><span class="num">1</span>Request Code → Component (D → W)</h2>` +
+        `<p class="desc">Same request code must map to the same component (W). New V6-only request codes are not listed here.</p>` +
+        renderTable(analysis1, "Request Code (Col D)", "Component (Col W)");
+
+      $("section-a2").innerHTML =
+        `<h2><span class="num">2</span>Component → VLAN (W → last data column)</h2>` +
+        `<p class="desc">Same component (col W) must map to the same VLAN in both versions. Includes new components (W) that appear only in V6.</p>` +
+        renderTable(analysis2, "Component (Col W)", "VLAN");
+
+      if (analysis3) {
+        $("section-a3").hidden = false;
+        $("section-a3").innerHTML =
+          `<h2><span class="num">3</span>Config templates (TXT) vs V6 requests</h2>` +
+          `<p class="desc">Compares templates in your uploaded TXT against Blue network rows in V6. Expected template names are taken from column W when present, or derived from VLAN (last data column) and Mbps rate in the row.</p>` +
+          renderTemplateComparison(analysis3);
+      } else {
+        $("section-a3").hidden = true;
+        $("section-a3").innerHTML = "";
+      }
+
+      $("results").classList.add("visible");
+      $("section-a1").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      showError(err.message);
+      $("results").classList.remove("visible");
+    }
+  }
+
+  async function onTemplatesFileChange(input) {
+    const file = input.files[0];
+    const meta = $("meta-templates");
+    if (!file) {
+      configTemplatesText = null;
+      meta.textContent =
+        "Cisco-style file with lines like template VLAN72_INTERFACE_TEMPLATE_50Mbps";
+      return;
+    }
+    try {
+      configTemplatesText = await file.text();
+      const count = parseTemplatesFromTxt(configTemplatesText).size;
+      meta.textContent = `${file.name} · ${count} template(s) parsed`;
+      clearError();
+    } catch (err) {
+      configTemplatesText = null;
+      meta.textContent = "";
+      showError(`Could not read ${file.name}: ${err.message}`);
+    }
+  }
+
+  $("file-v5").addEventListener("change", (e) => onFileChange("v5", e.target));
+  $("file-v6").addEventListener("change", (e) => onFileChange("v6", e.target));
+  $("file-templates").addEventListener("change", (e) => onTemplatesFileChange(e.target));
+  $("sheet-v5").addEventListener("change", () => {
+    updatePairingHint();
+    updateCompareButton();
+  });
+  $("sheet-v6").addEventListener("change", () => {
+    updatePairingHint();
+    updateCompareButton();
+  });
+  $("btn-compare").addEventListener("click", runCompare);
+  bindDeltaControls($("results"));
+})();
+  </script>
+</body>
+</html>

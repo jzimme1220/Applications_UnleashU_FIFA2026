@@ -320,63 +320,64 @@
                 </div>
             </div>
             <div class="actions">
-                <button type="button" class="btn btn-secondary" id="load-sample-btn">Load sample data &amp; template</button>
-                <button type="button" class="btn btn-primary" id="analyze-btn">Analyze data</button>
+                <button type="button" class="btn btn-primary" id="analyze-btn">Analyze &amp; generate report</button>
+                <button type="button" class="btn btn-secondary" id="download-btn" disabled>Download Excel (.xlsx)</button>
             </div>
-            <p class="hint">Files are parsed locally — nothing is uploaded to a server.</p>
+            <p class="hint">
+                Expected columns: Policy Name, Rule Name, Host Name, Series, Model, Result, Compliance Status.
+                Files are parsed locally — nothing is uploaded.
+                Example inputs: <code style="font-family:'JetBrains Mono',monospace;font-size:0.76rem;">Photo_compliance.txt</code>
+            </p>
         </div>
 
-        <div class="card" id="analysis-card" hidden>
-            <div class="card-title">Data analysis</div>
+        <div class="card" id="results-card" hidden>
+            <div class="card-title">Report preview</div>
             <div id="status" class="status"></div>
-            <div class="stats" id="stats"></div>
-            <div style="margin-bottom:0.75rem;">
-                <label style="display:block;margin-bottom:0.4rem;">Detected columns (use as <code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;">{{name}}</code> in template)</label>
-                <div class="columns-list" id="columns-list"></div>
-            </div>
-            <div class="table-wrap">
-                <table id="preview-table">
-                    <thead></thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div class="card two-col">
-            <div>
-                <div class="card-title">Template</div>
-                <textarea class="mono" id="template-text" rows="14" placeholder="Paste or upload a template with {{placeholders}}…"></textarea>
-                <div class="placeholder-help hint">
-                    Placeholders: <code>{{column_name}}</code>, <code>{{ROW}}</code> (1-based index),
-                    <code>{{#each}}…{{/each}}</code> to repeat a block per row.
-                    Unknown placeholders are left unchanged.
-                </div>
-            </div>
-            <div>
-                <div class="card-title">Generation options</div>
-                <div class="field" style="margin-bottom:0.75rem;">
-                    <label for="output-mode">Output mode</label>
-                    <select id="output-mode">
-                        <option value="per-row">One output block per data row</option>
-                        <option value="single">Single output (first row only)</option>
-                        <option value="each-block">Template contains {{#each}} block</option>
-                    </select>
-                </div>
-                <div class="field" style="margin-bottom:0.75rem;">
-                    <label for="row-separator">Separator between row blocks</label>
-                    <input type="text" id="row-separator" value="&#10;&#10;">
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn-primary" id="generate-btn">Generate output</button>
-                    <button type="button" class="btn btn-secondary" id="copy-btn">Copy</button>
-                    <button type="button" class="btn btn-secondary" id="download-btn">Download</button>
-                </div>
-            </div>
-        </div>
+            <div class="report-meta" id="report-meta"></div>
 
-        <div class="card">
-            <div class="card-title">Generated output</div>
-            <textarea class="mono output-area" id="output-text" readonly placeholder="Generated content will appear here…"></textarea>
+            <div class="summary-grid" id="summary-grid"></div>
+
+            <div class="tabs">
+                <button type="button" class="tab active" data-panel="violations-panel">Violations</button>
+                <button type="button" class="tab" data-panel="subnet-panel">By Subnet</button>
+            </div>
+
+            <div class="panel active" id="violations-panel">
+                <div class="table-wrap">
+                    <table id="violations-table">
+                        <thead>
+                            <tr>
+                                <th>Switch Name</th>
+                                <th>Switch IP</th>
+                                <th>Subnet</th>
+                                <th>Model</th>
+                                <th>Series</th>
+                                <th>Status</th>
+                                <th>Interface Count</th>
+                                <th>Non-Compliant Interfaces</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" id="subnet-panel">
+                <div class="table-wrap">
+                    <table id="subnet-table">
+                        <thead>
+                            <tr>
+                                <th>Subnet</th>
+                                <th>Violation Count</th>
+                                <th>Affected Interfaces</th>
+                                <th>Switch IPs</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -386,45 +387,20 @@
         (function () {
             'use strict';
 
-            const SAMPLE_DATA = `hostname,management_ip,vlan,description,rate_mbps
-SW-STADIUM-01,10.1.10.11,72,Press Wi-Fi,100
-SW-STADIUM-02,10.1.10.12,144,Broadcast VLAN,500
-SW-STADIUM-03,10.1.10.13,216,Staff network,50`;
-
-            const SAMPLE_TEMPLATE = `! Generated for {{hostname}} ({{management_ip}})
-interface GigabitEthernet1/0/1
- description {{description}}
- switchport access vlan {{vlan}}
-!
-{{#each}}
-! Row {{ROW}}: {{hostname}}
-template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
-{{/each}}`;
-
-            /** @type {Record<string, string>[]} */
-            let parsedRows = [];
-            /** @type {string[]} */
-            let columnKeys = [];
+            /** @type {null | { policy: string, rule: string, violations: object[], bySubnet: object[], summary: object, generatedAt: string, titleSuffix: string }} */
+            let report = null;
 
             const els = {
-                dataFile: document.getElementById('data-file'),
-                templateFile: document.getElementById('template-file'),
-                dataFormat: document.getElementById('data-format'),
-                delimiter: document.getElementById('delimiter'),
-                loadSample: document.getElementById('load-sample-btn'),
+                file: document.getElementById('compliance-file'),
+                titleSuffix: document.getElementById('report-title'),
                 analyze: document.getElementById('analyze-btn'),
-                analysisCard: document.getElementById('analysis-card'),
-                status: document.getElementById('status'),
-                stats: document.getElementById('stats'),
-                columnsList: document.getElementById('columns-list'),
-                previewTable: document.getElementById('preview-table'),
-                templateText: document.getElementById('template-text'),
-                outputMode: document.getElementById('output-mode'),
-                rowSeparator: document.getElementById('row-separator'),
-                generate: document.getElementById('generate-btn'),
-                copy: document.getElementById('copy-btn'),
                 download: document.getElementById('download-btn'),
-                outputText: document.getElementById('output-text'),
+                resultsCard: document.getElementById('results-card'),
+                status: document.getElementById('status'),
+                reportMeta: document.getElementById('report-meta'),
+                summaryGrid: document.getElementById('summary-grid'),
+                violationsBody: document.querySelector('#violations-table tbody'),
+                subnetBody: document.querySelector('#subnet-table tbody'),
                 toast: document.getElementById('toast')
             };
 
@@ -432,7 +408,7 @@ template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
                 els.toast.textContent = msg;
                 els.toast.classList.add('show');
                 clearTimeout(showToast._t);
-                showToast._t = setTimeout(() => els.toast.classList.remove('show'), 2200);
+                showToast._t = setTimeout(() => els.toast.classList.remove('show'), 2400);
             }
 
             function setStatus(type, message) {
@@ -440,26 +416,12 @@ template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
                 els.status.textContent = message;
             }
 
-            function normalizeKey(key) {
-                return String(key || '')
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[^\w]+/g, '_')
-                    .replace(/^_+|_+$/g, '');
-            }
-
-            function detectDelimiter(line) {
-                const candidates = [',', '\t', ';', '|'];
-                let best = ',';
-                let bestCount = -1;
-                for (const d of candidates) {
-                    const count = line.split(d).length;
-                    if (count > bestCount) {
-                        bestCount = count;
-                        best = d;
-                    }
-                }
-                return best;
+            function escapeHtml(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
             }
 
             function splitCSVLine(line, delim) {
@@ -488,23 +450,17 @@ template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
                 return out.map((s) => s.trim());
             }
 
-            function parseDelimited(text, forcedDelim) {
-                const lines = text.split(/\r?\n/).filter((l) => l.trim());
+            function parseComplianceCSV(text) {
+                const lines = text.split(/\r?\n/).filter((l) => l.length);
                 if (!lines.length) return [];
 
-                const delim = forcedDelim === 'auto' || !forcedDelim
-                    ? detectDelimiter(lines[0])
-                    : forcedDelim;
-
-                const headers = splitCSVLine(lines[0], delim).map((h, i) => {
-                    const n = normalizeKey(h);
-                    return n || 'column_' + (i + 1);
-                });
-
+                const delim = lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ',';
+                const headers = splitCSVLine(lines[0], delim);
                 const rows = [];
+
                 for (let i = 1; i < lines.length; i++) {
                     const cols = splitCSVLine(lines[i], delim);
-                    if (cols.every((c) => !c)) continue;
+                    if (!cols.some((c) => c)) continue;
                     const row = {};
                     headers.forEach((h, idx) => {
                         row[h] = cols[idx] ?? '';
@@ -514,166 +470,315 @@ template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
                 return rows;
             }
 
-            function parseKeyValueLines(text) {
-                const rows = [];
-                let current = {};
+            function ipToSubnet(ip) {
+                const parts = String(ip || '').trim().split('.');
+                if (parts.length === 4) return parts.slice(0, 3).join('.') + '.0/24';
+                return '';
+            }
 
-                const flush = () => {
-                    if (Object.keys(current).length) rows.push(current);
-                    current = {};
-                };
-
-                for (const raw of text.split(/\r?\n/)) {
-                    const line = raw.trim();
-                    if (!line) {
-                        flush();
-                        continue;
-                    }
-                    const match = line.match(/^([^:=|]+?)[:=|]\s*(.*)$/);
-                    if (!match) continue;
-                    current[normalizeKey(match[1])] = match[2].trim();
+            function ipToSwitchName(ip) {
+                const parts = String(ip || '').trim().split('.');
+                if (parts.length === 4) {
+                    const last = parseInt(parts[3], 10);
+                    return 'fwc26-sw-' + String(last).padStart(3, '0');
                 }
-                flush();
-                return rows.length ? rows : [current];
+                return String(ip || '');
             }
 
-            function parseKeyValueBlocks(text) {
-                const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-                if (!blocks.length) return parseKeyValueLines(text);
+            function extractInterface(content) {
+                const m = String(content || '').match(/interface\s+(\S+)/);
+                return m ? m[1] : null;
+            }
 
-                return blocks.map((block) => {
-                    const row = {};
-                    for (const raw of block.split(/\r?\n/)) {
-                        const line = raw.trim();
-                        if (!line) continue;
-                        const match = line.match(/^([^:=|]+?)[:=|]\s*(.*)$/);
-                        if (match) row[normalizeKey(match[1])] = match[2].trim();
+            function ifaceSortKey(name) {
+                const m = String(name).match(/GigabitEthernet(\d+)\/(\d+)\/(\d+)/i);
+                if (m) return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+                return [999, 999, 999];
+            }
+
+            function sortInterfaces(ifaces) {
+                return [...ifaces].sort((a, b) => {
+                    const ka = ifaceSortKey(a);
+                    const kb = ifaceSortKey(b);
+                    for (let i = 0; i < 3; i++) {
+                        if (ka[i] !== kb[i]) return ka[i] - kb[i];
                     }
-                    return row;
-                }).filter((r) => Object.keys(r).length);
-            }
-
-            function parseDataText(text, format, delimChoice) {
-                const forcedDelim = delimChoice === 'auto' ? null : delimChoice;
-
-                if (format === 'csv') return parseDelimited(text, forcedDelim);
-                if (format === 'kv') return parseKeyValueLines(text);
-                if (format === 'blocks') return parseKeyValueBlocks(text);
-
-                // auto: try delimited first if header looks tabular
-                const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || '';
-                const looksDelimited = /[,;\t|]/.test(firstLine) && firstLine.split(/[,;\t|]/).length > 1;
-
-                if (looksDelimited) return parseDelimited(text, forcedDelim);
-
-                const blockRows = parseKeyValueBlocks(text);
-                if (blockRows.length) return blockRows;
-
-                return parseKeyValueLines(text);
-            }
-
-            function getRowValue(row, token) {
-                const key = normalizeKey(token);
-                if (key === 'row') return String(parsedRows.indexOf(row) + 1);
-                if (row[key] !== undefined) return row[key];
-                return null;
-            }
-
-            function applyPlaceholders(template, row, rowNumber) {
-                return template.replace(/\{\{\s*([^{}#/]+?)\s*\}\}/g, (full, name) => {
-                    const norm = normalizeKey(name);
-                    if (norm === 'row') return String(rowNumber);
-                    if (row[norm] !== undefined) return row[norm];
-                    return full;
+                    return a.localeCompare(b);
                 });
             }
 
-            function extractEachBlock(template) {
-                const re = /\{\{#each\}\}([\s\S]*?)\{\{\/each\}\}/i;
-                const match = template.match(re);
-                if (!match) return null;
+            function findViolationsFromResult(resultText) {
+                if (!resultText || resultText === '{}' || resultText === '[NA]') return [];
+
+                let data;
+                try {
+                    data = JSON.parse(resultText);
+                } catch {
+                    return [];
+                }
+
+                const violations = [];
+
+                function walk(node) {
+                    if (!node || typeof node !== 'object') return;
+
+                    if (Array.isArray(node)) {
+                        node.forEach(walk);
+                        return;
+                    }
+
+                    const finalResult = node.finalResult;
+                    const nestedResult = node.result && typeof node.result === 'object' ? node.result.result : null;
+                    const outcome = finalResult || nestedResult;
+
+                    if (outcome && outcome !== 'COMPLIANT' && outcome !== 'NOT_REQUIRED') {
+                        const content = (node.inputBlockInfo && node.inputBlockInfo.content) || '';
+                        const iface = extractInterface(content);
+                        if (iface) violations.push(iface);
+                    }
+
+                    Object.values(node).forEach(walk);
+                }
+
+                walk(data);
+                return violations;
+            }
+
+            function formatReportTimestamp(date) {
+                const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+                const h = date.getHours();
+                const m = String(date.getMinutes()).padStart(2, '0');
+                return months[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear() +
+                    ' ' + h + ':' + m;
+            }
+
+            function buildReport(rows, titleSuffix) {
+                if (!rows.length) throw new Error('No data rows found in file.');
+
+                const violationRows = rows.filter((r) =>
+                    String(r['Compliance Status'] || '').trim().toUpperCase() === 'VIOLATION'
+                );
+
+                if (!violationRows.length) {
+                    throw new Error('No rows with Compliance Status = VIOLATION were found.');
+                }
+
+                const policy = violationRows[0]['Policy Name'] || '';
+                const rule = violationRows[0]['Rule Name'] || '';
+
+                /** @type {Map<string, { switchName: string, switchIp: string, subnet: string, model: string, series: string, ifaces: Set<string> }>} */
+                const byHost = new Map();
+
+                for (const row of violationRows) {
+                    const host = String(row['Host Name'] || '').trim();
+                    if (!host) continue;
+
+                    const ifaces = findViolationsFromResult(row['Result'] || '');
+                    if (!ifaces.length) continue;
+
+                    if (!byHost.has(host)) {
+                        byHost.set(host, {
+                            switchName: ipToSwitchName(host),
+                            switchIp: host,
+                            subnet: ipToSubnet(host),
+                            model: row['Model'] || '',
+                            series: row['Series'] || '',
+                            ifaces: new Set()
+                        });
+                    }
+
+                    const entry = byHost.get(host);
+                    ifaces.forEach((iface) => entry.ifaces.add(iface));
+                    entry.model = row['Model'] || entry.model;
+                    entry.series = row['Series'] || entry.series;
+                }
+
+                if (!byHost.size) {
+                    throw new Error('VIOLATION rows were found but no non-compliant interfaces could be parsed from Result JSON.');
+                }
+
+                const violations = [...byHost.values()]
+                    .map((v) => {
+                        const sorted = sortInterfaces([...v.ifaces]);
+                        return {
+                            switchName: v.switchName,
+                            switchIp: v.switchIp,
+                            subnet: v.subnet,
+                            model: v.model,
+                            series: v.series,
+                            status: 'VIOLATION',
+                            interfaceCount: sorted.length,
+                            interfaces: sorted,
+                            interfacesText: sorted.join(', ')
+                        };
+                    })
+                    .sort((a, b) => a.switchIp.localeCompare(b.switchIp, undefined, { numeric: true }));
+
+                /** @type {Map<string, { subnet: string, violationCount: number, affectedInterfaces: number, switchIps: string[] }>} */
+                const subnetMap = new Map();
+                for (const v of violations) {
+                    if (!subnetMap.has(v.subnet)) {
+                        subnetMap.set(v.subnet, {
+                            subnet: v.subnet,
+                            violationCount: 0,
+                            affectedInterfaces: 0,
+                            switchIps: []
+                        });
+                    }
+                    const s = subnetMap.get(v.subnet);
+                    s.violationCount += 1;
+                    s.affectedInterfaces += v.interfaceCount;
+                    s.switchIps.push(v.switchIp);
+                }
+
+                const bySubnet = [...subnetMap.values()]
+                    .map((s) => ({
+                        subnet: s.subnet,
+                        violationCount: s.violationCount,
+                        affectedInterfaces: s.affectedInterfaces,
+                        switchIps: s.switchIps.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+                        switchIpsText: s.switchIps.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(', ')
+                    }))
+                    .sort((a, b) => a.subnet.localeCompare(b.subnet));
+
+                const totalInterfaces = violations.reduce((sum, v) => sum + v.interfaceCount, 0);
+                const multiInterface = violations.filter((v) => v.interfaceCount > 1).length;
+
                 return {
-                    before: template.slice(0, match.index),
-                    block: match[1],
-                    after: template.slice(match.index + match[0].length)
+                    policy,
+                    rule,
+                    titleSuffix: titleSuffix || '',
+                    generatedAt: formatReportTimestamp(new Date()),
+                    violations,
+                    bySubnet,
+                    summary: {
+                        totalViolations: violations.length,
+                        affectedInterfaces: totalInterfaces,
+                        uniqueSubnets: bySubnet.length,
+                        multiInterface
+                    }
                 };
             }
 
-            function generateOutput(template, mode, separator) {
-                if (!parsedRows.length) throw new Error('No data rows to process. Analyze a data file first.');
-                if (!template.trim()) throw new Error('Template is empty.');
-
-                const eachParts = extractEachBlock(template);
-
-                if (mode === 'each-block' || eachParts) {
-                    const parts = eachParts || extractEachBlock(template + '\n{{#each}}\n{{/each}}');
-                    if (!parts) throw new Error('Output mode requires a {{#each}}…{{/each}} block in the template.');
-
-                    const renderedRows = parsedRows.map((row, i) =>
-                        applyPlaceholders(parts.block, row, i + 1)
-                    );
-
-                    const head = applyPlaceholders(parts.before, parsedRows[0], 1);
-                    const tail = parsedRows.length === 1
-                        ? applyPlaceholders(parts.after, parsedRows[0], 1)
-                        : parts.after.replace(/\{\{\s*([^{}#/]+?)\s*\}\}/g, '');
-
-                    return (head + renderedRows.join(separator) + tail).trim();
-                }
-
-                if (mode === 'single') {
-                    return applyPlaceholders(template, parsedRows[0], 1).trim();
-                }
-
-                return parsedRows
-                    .map((row, i) => applyPlaceholders(template, row, i + 1))
-                    .join(separator)
-                    .trim();
+            function defaultTitleSuffix(policy) {
+                if (!policy) return 'Interface Compliance Violations';
+                if (policy.includes('Photographers')) return 'Photographers VLAN Compliance Violations';
+                if (policy.includes('FTI')) return 'FTI Interface Compliance Violations';
+                return policy.replace(/^FWC26_/, '').replace(/_/g, ' ') + ' Violations';
             }
 
-            function renderAnalysis(rows) {
-                parsedRows = rows;
-                columnKeys = rows.length
-                    ? [...new Set(rows.flatMap((r) => Object.keys(r)))]
-                    : [];
+            function renderReport(data) {
+                report = data;
+                els.resultsCard.hidden = false;
+                els.download.disabled = false;
 
-                els.analysisCard.hidden = false;
+                const title = 'FWC26 \u2013 ' + (data.titleSuffix || defaultTitleSuffix(data.policy));
 
-                if (!rows.length) {
-                    setStatus('warn', 'File parsed successfully but no data rows were found. Check format and delimiter settings.');
-                    els.stats.innerHTML = '';
-                    els.columnsList.innerHTML = '';
-                    els.previewTable.querySelector('thead').innerHTML = '';
-                    els.previewTable.querySelector('tbody').innerHTML = '';
-                    return;
-                }
+                setStatus('success',
+                    'Found ' + data.summary.totalViolations + ' switch violation' +
+                    (data.summary.totalViolations === 1 ? '' : 's') + ' across ' +
+                    data.summary.uniqueSubnets + ' subnet' +
+                    (data.summary.uniqueSubnets === 1 ? '' : 's') + '.');
 
-                setStatus('success', `Parsed ${rows.length} row${rows.length === 1 ? '' : 's'} with ${columnKeys.length} column${columnKeys.length === 1 ? '' : 's'}.`);
+                els.reportMeta.innerHTML =
+                    '<strong>' + escapeHtml(title) + '</strong><br>' +
+                    'Report generated: ' + escapeHtml(data.generatedAt) +
+                    ' &nbsp;|&nbsp; Rule: <strong>' + escapeHtml(data.rule) + '</strong>' +
+                    ' &nbsp;|&nbsp; Policy: <strong>' + escapeHtml(data.policy) + '</strong>';
 
-                els.stats.innerHTML = [
-                    `<div class="stat"><strong>${rows.length}</strong> rows</div>`,
-                    `<div class="stat"><strong>${columnKeys.length}</strong> columns</div>`,
-                    `<div class="stat">Preview: first <strong>${Math.min(8, rows.length)}</strong> rows</div>`
-                ].join('');
+                els.summaryGrid.innerHTML = [
+                    { label: 'Total violations', value: data.summary.totalViolations, warn: true },
+                    { label: 'Affected interfaces', value: data.summary.affectedInterfaces, warn: true },
+                    { label: 'Unique subnets', value: data.summary.uniqueSubnets, warn: false },
+                    { label: 'Multi-interface', value: data.summary.multiInterface, warn: false }
+                ].map((item) =>
+                    '<div class="summary-card">' +
+                    '<div class="label">' + escapeHtml(item.label) + '</div>' +
+                    '<div class="value' + (item.warn ? ' warn' : '') + '">' + item.value + '</div>' +
+                    '</div>'
+                ).join('');
 
-                els.columnsList.innerHTML = columnKeys
-                    .map((k) => `<span class="chip">{{${k}}}</span>`)
-                    .join('');
+                els.violationsBody.innerHTML = data.violations.map((v) =>
+                    '<tr>' +
+                    '<td>' + escapeHtml(v.switchName) + '</td>' +
+                    '<td>' + escapeHtml(v.switchIp) + '</td>' +
+                    '<td>' + escapeHtml(v.subnet) + '</td>' +
+                    '<td>' + escapeHtml(v.model) + '</td>' +
+                    '<td>' + escapeHtml(v.series) + '</td>' +
+                    '<td><span class="badge-violation">' + escapeHtml(v.status) + '</span></td>' +
+                    '<td>' + v.interfaceCount + '</td>' +
+                    '<td class="ifaces-cell">' + escapeHtml(v.interfacesText) + '</td>' +
+                    '</tr>'
+                ).join('');
 
-                const thead = els.previewTable.querySelector('thead');
-                const tbody = els.previewTable.querySelector('tbody');
-                thead.innerHTML = '<tr>' + columnKeys.map((k) => `<th>${escapeHtml(k)}</th>`).join('') + '</tr>';
-                tbody.innerHTML = rows.slice(0, 8).map((row) =>
-                    '<tr>' + columnKeys.map((k) => `<td>${escapeHtml(row[k] ?? '')}</td>`).join('') + '</tr>'
+                els.subnetBody.innerHTML = data.bySubnet.map((s) =>
+                    '<tr>' +
+                    '<td>' + escapeHtml(s.subnet) + '</td>' +
+                    '<td>' + s.violationCount + '</td>' +
+                    '<td>' + s.affectedInterfaces + '</td>' +
+                    '<td class="ifaces-cell">' + escapeHtml(s.switchIpsText) + '</td>' +
+                    '</tr>'
                 ).join('');
             }
 
-            function escapeHtml(s) {
-                return String(s)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;');
+            function buildWorkbook(data) {
+                const title = 'FWC26 \u2013 ' + (data.titleSuffix || defaultTitleSuffix(data.policy));
+                const metaLine = 'Report generated: ' + data.generatedAt +
+                    '  |  Rule: ' + data.rule + '  |  Policy: ' + data.policy;
+
+                const violationsSheet = [
+                    [title],
+                    [metaLine],
+                    [],
+                    [
+                        'Total Violations: ' + data.summary.totalViolations,
+                        null,
+                        'Affected Interfaces: ' + data.summary.affectedInterfaces,
+                        null,
+                        'Unique Subnets: ' + data.summary.uniqueSubnets,
+                        null,
+                        'Multi-Interface: ' + data.summary.multiInterface,
+                        null
+                    ],
+                    [],
+                    ['Switch Name', 'Switch IP', 'Subnet', 'Model', 'Series', 'Status', 'Interface Count', 'Non-Compliant Interfaces'],
+                    ...data.violations.map((v) => [
+                        v.switchName,
+                        v.switchIp,
+                        v.subnet,
+                        v.model,
+                        v.series,
+                        v.status,
+                        v.interfaceCount,
+                        v.interfacesText
+                    ])
+                ];
+
+                const subnetSheet = [
+                    ['Violations by Subnet'],
+                    ['Subnet', 'Violation Count', 'Affected Interfaces', 'Switch IPs'],
+                    ...data.bySubnet.map((s) => [
+                        s.subnet,
+                        s.violationCount,
+                        s.affectedInterfaces,
+                        s.switchIpsText
+                    ])
+                ];
+
+                const wb = XLSX.utils.book_new();
+                const ws1 = XLSX.utils.aoa_to_sheet(violationsSheet);
+                const ws2 = XLSX.utils.aoa_to_sheet(subnetSheet);
+
+                ws1['!cols'] = [
+                    { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+                    { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 60 }
+                ];
+                ws2['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 50 }];
+
+                XLSX.utils.book_append_sheet(wb, ws1, 'Violations');
+                XLSX.utils.book_append_sheet(wb, ws2, 'By Subnet');
+                return wb;
             }
 
             function readFile(file) {
@@ -685,97 +790,57 @@ template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
                 });
             }
 
-            async function analyzeFromText(text) {
-                const format = els.dataFormat.value;
-                const delim = els.delimiter.value;
-                const rows = parseDataText(text, format, delim);
-                renderAnalysis(rows);
-            }
-
-            els.loadSample.addEventListener('click', () => {
-                els.templateText.value = SAMPLE_TEMPLATE;
-                analyzeFromText(SAMPLE_DATA);
-                els.outputMode.value = 'per-row';
-                showToast('Sample data and template loaded');
-            });
-
-            els.analyze.addEventListener('click', async () => {
-                try {
-                    if (els.dataFile.files[0]) {
-                        const text = await readFile(els.dataFile.files[0]);
-                        await analyzeFromText(text);
-                    } else {
-                        setStatus('error', 'Choose a data file or use "Load sample data & template".');
-                        els.analysisCard.hidden = false;
-                    }
-                } catch (err) {
-                    setStatus('error', err.message || String(err));
-                    els.analysisCard.hidden = false;
-                }
-            });
-
-            els.dataFile.addEventListener('change', async () => {
-                if (!els.dataFile.files[0]) return;
-                try {
-                    const text = await readFile(els.dataFile.files[0]);
-                    await analyzeFromText(text);
-                } catch (err) {
-                    setStatus('error', err.message || String(err));
-                    els.analysisCard.hidden = false;
-                }
-            });
-
-            els.templateFile.addEventListener('change', async () => {
-                const file = els.templateFile.files[0];
-                if (!file) return;
-                try {
-                    els.templateText.value = await readFile(file);
-                    showToast('Template loaded');
-                } catch (err) {
-                    showToast('Failed to read template');
-                }
-            });
-
-            els.generate.addEventListener('click', () => {
-                try {
-                    const sep = els.rowSeparator.value.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-                    const out = generateOutput(els.templateText.value, els.outputMode.value, sep);
-                    els.outputText.value = out;
-                    showToast('Output generated');
-                } catch (err) {
-                    els.outputText.value = '';
-                    showToast(err.message || 'Generation failed');
-                }
-            });
-
-            els.copy.addEventListener('click', async () => {
-                if (!els.outputText.value) {
-                    showToast('Nothing to copy');
+            async function analyzeFile() {
+                const file = els.file.files[0];
+                if (!file) {
+                    setStatus('error', 'Choose a compliance export file first (e.g. Photo_compliance.txt).');
+                    els.resultsCard.hidden = false;
                     return;
                 }
+
                 try {
-                    await navigator.clipboard.writeText(els.outputText.value);
-                    showToast('Copied to clipboard');
-                } catch {
-                    els.outputText.select();
-                    document.execCommand('copy');
-                    showToast('Copied to clipboard');
+                    const text = await readFile(file);
+                    const rows = parseComplianceCSV(text);
+                    const suffix = els.titleSuffix.value.trim();
+                    const data = buildReport(rows, suffix);
+                    if (!suffix && data.policy) {
+                        els.titleSuffix.placeholder = defaultTitleSuffix(data.policy).replace(/^.*\u2013\s*/, '');
+                    }
+                    renderReport(data);
+                    showToast('Report generated');
+                } catch (err) {
+                    report = null;
+                    els.download.disabled = true;
+                    els.resultsCard.hidden = false;
+                    setStatus('error', err.message || String(err));
                 }
+            }
+
+            els.analyze.addEventListener('click', analyzeFile);
+
+            els.file.addEventListener('change', () => {
+                if (els.file.files[0]) analyzeFile();
             });
 
             els.download.addEventListener('click', () => {
-                if (!els.outputText.value) {
-                    showToast('Nothing to download');
+                if (!report) {
+                    showToast('Generate a report first');
                     return;
                 }
-                const blob = new Blob([els.outputText.value], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'generated-output.txt';
-                a.click();
-                URL.revokeObjectURL(url);
-                showToast('Download started');
+                const wb = buildWorkbook(report);
+                const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/(\d{8})(\d{4})/, '$1_$2');
+                const filename = 'FWC26_Compliance_Violations_' + stamp + '.xlsx';
+                XLSX.writeFile(wb, filename);
+                showToast('Excel download started');
+            });
+
+            document.querySelectorAll('.tab').forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+                    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+                    tab.classList.add('active');
+                    document.getElementById(tab.dataset.panel).classList.add('active');
+                });
             });
         })();
     </script>

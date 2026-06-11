@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Template Generator</title>
+    <title>FWC26 Compliance Violations Report</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -16,10 +17,10 @@
             --text: #f8fafc;
             --muted: #94a3b8;
             --input-bg: rgba(15, 17, 26, 0.7);
-            --code-bg: rgba(10, 11, 16, 0.9);
             --success: #10b981;
             --warn: #f59e0b;
             --error: #ef4444;
+            --violation: #f87171;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -53,15 +54,12 @@
         .app {
             position: relative;
             z-index: 1;
-            max-width: 1280px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 1.5rem;
         }
 
-        header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
+        header { text-align: center; margin-bottom: 1.5rem; }
 
         header h1 {
             font-size: 1.85rem;
@@ -93,13 +91,11 @@
 
         .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
 
-        .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 160px; }
-
-        .field.narrow { flex: 0 0 140px; min-width: 120px; }
+        .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 200px; }
 
         label { font-size: 0.85rem; font-weight: 500; color: #cbd5e1; }
 
-        select, input[type="file"], input[type="text"], textarea {
+        select, input[type="file"], input[type="text"] {
             background: var(--input-bg);
             border: 1px solid var(--border);
             color: var(--text);
@@ -109,23 +105,13 @@
             width: 100%;
         }
 
-        textarea.mono {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.82rem;
-            line-height: 1.45;
-        }
-
-        select:focus, input:focus, textarea:focus {
+        select:focus, input:focus {
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
         }
 
-        .hint {
-            font-size: 0.78rem;
-            color: var(--muted);
-            margin-top: 0.65rem;
-        }
+        .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.65rem; }
 
         .btn {
             display: inline-flex;
@@ -142,98 +128,16 @@
         }
 
         .btn:active { transform: scale(0.98); }
-
         .btn-primary { background: var(--primary); color: #fff; }
         .btn-primary:hover { background: var(--primary-hover); }
-
         .btn-secondary {
             background: rgba(255, 255, 255, 0.06);
             color: var(--text);
             border: 1px solid var(--border);
         }
-
         .btn-secondary:hover { background: rgba(255, 255, 255, 0.1); }
 
         .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.75rem; }
-
-        .stats {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .stat {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 0.55rem 0.85rem;
-            font-size: 0.82rem;
-        }
-
-        .stat strong { color: #e2e8f0; }
-
-        .table-wrap {
-            overflow: auto;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            max-height: 220px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.8rem;
-        }
-
-        th, td {
-            padding: 0.45rem 0.65rem;
-            border-bottom: 1px solid var(--border);
-            text-align: left;
-            white-space: nowrap;
-        }
-
-        th {
-            position: sticky;
-            top: 0;
-            background: rgba(15, 17, 26, 0.95);
-            color: #cbd5e1;
-            font-weight: 600;
-        }
-
-        tr:hover td { background: rgba(99, 102, 241, 0.08); }
-
-        .columns-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-        }
-
-        .chip {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.72rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 6px;
-            background: rgba(99, 102, 241, 0.15);
-            border: 1px solid rgba(99, 102, 241, 0.35);
-            color: #c7d2fe;
-        }
-
-        .output-area {
-            min-height: 280px;
-            background: var(--code-bg);
-            resize: vertical;
-        }
-
-        .two-col {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-
-        @media (max-width: 900px) {
-            .two-col { grid-template-columns: 1fr; }
-        }
 
         .status {
             font-size: 0.82rem;
@@ -248,13 +152,110 @@
         .status.success { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); color: #a7f3d0; }
         .status.warn { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fde68a; }
 
-        .placeholder-help code {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.78rem;
-            background: rgba(255, 255, 255, 0.06);
-            padding: 0.1rem 0.35rem;
-            border-radius: 4px;
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
         }
+
+        .summary-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem 0.9rem;
+        }
+
+        .summary-card .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .summary-card .value { font-size: 1.35rem; font-weight: 700; margin-top: 0.2rem; }
+        .summary-card .value.warn { color: var(--violation); }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .tab {
+            padding: 0.45rem 0.85rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            font: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .tab.active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.45);
+            color: #e0e7ff;
+        }
+
+        .table-wrap {
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            max-height: 420px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        th, td {
+            padding: 0.5rem 0.7rem;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: rgba(15, 17, 26, 0.95);
+            color: #cbd5e1;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        tr:hover td { background: rgba(99, 102, 241, 0.06); }
+
+        .badge-violation {
+            display: inline-block;
+            padding: 0.15rem 0.45rem;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: rgba(248, 113, 113, 0.15);
+            color: #fecaca;
+            border: 1px solid rgba(248, 113, 113, 0.35);
+        }
+
+        .ifaces-cell {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.74rem;
+            color: #cbd5e1;
+            max-width: 420px;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .report-meta {
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
+        }
+
+        .report-meta strong { color: #f8fafc; }
+
+        .panel { display: none; }
+        .panel.active { display: block; }
 
         #toast {
             position: fixed;
@@ -269,7 +270,6 @@
             transform: translateY(8px);
             transition: opacity 0.2s, transform 0.2s;
             z-index: 100;
-            pointer-events: none;
         }
 
         #toast.show { opacity: 1; transform: translateY(0); }
@@ -284,39 +284,20 @@
 
     <div class="app">
         <header>
-            <h1>Data Template Generator</h1>
-            <p>Upload a CSV or formatted text file, apply a template, and export structured output — all in your browser.</p>
+            <h1>FWC26 Compliance Violations Report</h1>
+            <p>Upload a compliance export (.txt / .csv), analyze violations, preview the report, and download Excel.</p>
         </header>
 
         <div class="card">
-            <div class="card-title">Input files</div>
+            <div class="card-title">Input</div>
             <div class="row">
                 <div class="field">
-                    <label for="data-file">Data file (CSV or TXT)</label>
-                    <input type="file" id="data-file" accept=".csv,.txt,.tsv,text/csv,text/plain">
+                    <label for="compliance-file">Compliance export file</label>
+                    <input type="file" id="compliance-file" accept=".txt,.csv,text/plain,text/csv">
                 </div>
-                <div class="field">
-                    <label for="template-file">Template file (.txt, .html, etc.)</label>
-                    <input type="file" id="template-file" accept=".txt,.html,.htm,.md,text/plain,text/html">
-                </div>
-                <div class="field narrow">
-                    <label for="data-format">Data format</label>
-                    <select id="data-format">
-                        <option value="auto">Auto-detect</option>
-                        <option value="csv">Delimited (CSV/TSV)</option>
-                        <option value="kv">Key : value lines</option>
-                        <option value="blocks">Key : value blocks</option>
-                    </select>
-                </div>
-                <div class="field narrow">
-                    <label for="delimiter">Delimiter</label>
-                    <select id="delimiter">
-                        <option value="auto">Auto</option>
-                        <option value=",">Comma</option>
-                        <option value="&#9;">Tab</option>
-                        <option value=";">Semicolon</option>
-                        <option value="|">Pipe</option>
-                    </select>
+                <div class="field" style="max-width:280px;">
+                    <label for="report-title">Report title suffix</label>
+                    <input type="text" id="report-title" placeholder="e.g. Photographers VLAN">
                 </div>
             </div>
             <div class="actions">

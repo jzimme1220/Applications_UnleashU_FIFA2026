@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Template Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f111a;
+            --surface: rgba(25, 28, 41, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --input-bg: rgba(15, 17, 26, 0.7);
+            --code-bg: rgba(10, 11, 16, 0.9);
+            --success: #10b981;
+            --warn: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .bg-orbs {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(90px);
+            opacity: 0.35;
+        }
+
+        .orb-a { width: 420px; height: 420px; top: -8%; left: 5%; background: #6366f1; }
+        .orb-b { width: 500px; height: 500px; bottom: -15%; right: -5%; background: #14b8a6; }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        header h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p { color: var(--muted); font-size: 0.95rem; margin-top: 0.35rem; }
+
+        .card {
+            background: var(--surface);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+
+        .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 160px; }
+
+        .field.narrow { flex: 0 0 140px; min-width: 120px; }
+
+        label { font-size: 0.85rem; font-weight: 500; color: #cbd5e1; }
+
+        select, input[type="file"], input[type="text"], textarea {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.65rem 0.85rem;
+            border-radius: 10px;
+            font: inherit;
+            width: 100%;
+        }
+
+        textarea.mono {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+        }
+
+        .hint {
+            font-size: 0.78rem;
+            color: var(--muted);
+            margin-top: 0.65rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            padding: 0.65rem 1.1rem;
+            border-radius: 10px;
+            border: none;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+
+        .btn:active { transform: scale(0.98); }
+
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.1); }
+
+        .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.75rem; }
+
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.55rem 0.85rem;
+            font-size: 0.82rem;
+        }
+
+        .stat strong { color: #e2e8f0; }
+
+        .table-wrap {
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            max-height: 220px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        th, td {
+            padding: 0.45rem 0.65rem;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: rgba(15, 17, 26, 0.95);
+            color: #cbd5e1;
+            font-weight: 600;
+        }
+
+        tr:hover td { background: rgba(99, 102, 241, 0.08); }
+
+        .columns-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .chip {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.72rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            color: #c7d2fe;
+        }
+
+        .output-area {
+            min-height: 280px;
+            background: var(--code-bg);
+            resize: vertical;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 900px) {
+            .two-col { grid-template-columns: 1fr; }
+        }
+
+        .status {
+            font-size: 0.82rem;
+            padding: 0.55rem 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            display: none;
+        }
+
+        .status.show { display: block; }
+        .status.error { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #fecaca; }
+        .status.success { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); color: #a7f3d0; }
+        .status.warn { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fde68a; }
+
+        .placeholder-help code {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.78rem;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 1.25rem;
+            right: 1.25rem;
+            background: #1e293b;
+            border: 1px solid var(--border);
+            padding: 0.65rem 1rem;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.2s, transform 0.2s;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        #toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+
+<body>
+    <div class="bg-orbs">
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+    </div>
+
+    <div class="app">
+        <header>
+            <h1>Data Template Generator</h1>
+            <p>Upload a CSV or formatted text file, apply a template, and export structured output — all in your browser.</p>
+        </header>
+
+        <div class="card">
+            <div class="card-title">Input files</div>
+            <div class="row">
+                <div class="field">
+                    <label for="data-file">Data file (CSV or TXT)</label>
+                    <input type="file" id="data-file" accept=".csv,.txt,.tsv,text/csv,text/plain">
+                </div>
+                <div class="field">
+                    <label for="template-file">Template file (.txt, .html, etc.)</label>
+                    <input type="file" id="template-file" accept=".txt,.html,.htm,.md,text/plain,text/html">
+                </div>
+                <div class="field narrow">
+                    <label for="data-format">Data format</label>
+                    <select id="data-format">
+                        <option value="auto">Auto-detect</option>
+                        <option value="csv">Delimited (CSV/TSV)</option>
+                        <option value="kv">Key : value lines</option>
+                        <option value="blocks">Key : value blocks</option>
+                    </select>
+                </div>
+                <div class="field narrow">
+                    <label for="delimiter">Delimiter</label>
+                    <select id="delimiter">
+                        <option value="auto">Auto</option>
+                        <option value=",">Comma</option>
+                        <option value="&#9;">Tab</option>
+                        <option value=";">Semicolon</option>
+                        <option value="|">Pipe</option>
+                    </select>
+                </div>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="load-sample-btn">Load sample data &amp; template</button>
+                <button type="button" class="btn btn-primary" id="analyze-btn">Analyze data</button>
+            </div>
+            <p class="hint">Files are parsed locally — nothing is uploaded to a server.</p>
+        </div>
+
+        <div class="card" id="analysis-card" hidden>
+            <div class="card-title">Data analysis</div>
+            <div id="status" class="status"></div>
+            <div class="stats" id="stats"></div>
+            <div style="margin-bottom:0.75rem;">
+                <label style="display:block;margin-bottom:0.4rem;">Detected columns (use as <code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;">{{name}}</code> in template)</label>
+                <div class="columns-list" id="columns-list"></div>
+            </div>
+            <div class="table-wrap">
+                <table id="preview-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card two-col">
+            <div>
+                <div class="card-title">Template</div>
+                <textarea class="mono" id="template-text" rows="14" placeholder="Paste or upload a template with {{placeholders}}…"></textarea>
+                <div class="placeholder-help hint">
+                    Placeholders: <code>{{column_name}}</code>, <code>{{ROW}}</code> (1-based index),
+                    <code>{{#each}}…{{/each}}</code> to repeat a block per row.
+                    Unknown placeholders are left unchanged.
+                </div>
+            </div>
+            <div>
+                <div class="card-title">Generation options</div>
+                <div class="field" style="margin-bottom:0.75rem;">
+                    <label for="output-mode">Output mode</label>
+                    <select id="output-mode">
+                        <option value="per-row">One output block per data row</option>
+                        <option value="single">Single output (first row only)</option>
+                        <option value="each-block">Template contains {{#each}} block</option>
+                    </select>
+                </div>
+                <div class="field" style="margin-bottom:0.75rem;">
+                    <label for="row-separator">Separator between row blocks</label>
+                    <input type="text" id="row-separator" value="&#10;&#10;">
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn-primary" id="generate-btn">Generate output</button>
+                    <button type="button" class="btn btn-secondary" id="copy-btn">Copy</button>
+                    <button type="button" class="btn btn-secondary" id="download-btn">Download</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Generated output</div>
+            <textarea class="mono output-area" id="output-text" readonly placeholder="Generated content will appear here…"></textarea>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const SAMPLE_DATA = `hostname,management_ip,vlan,description,rate_mbps
+SW-STADIUM-01,10.1.10.11,72,Press Wi-Fi,100
+SW-STADIUM-02,10.1.10.12,144,Broadcast VLAN,500
+SW-STADIUM-03,10.1.10.13,216,Staff network,50`;
+
+            const SAMPLE_TEMPLATE = `! Generated for {{hostname}} ({{management_ip}})
+interface GigabitEthernet1/0/1
+ description {{description}}
+ switchport access vlan {{vlan}}
+!
+{{#each}}
+! Row {{ROW}}: {{hostname}}
+template VLAN{{vlan}}_INTERFACE_TEMPLATE_{{rate_mbps}}Mbps
+{{/each}}`;
+
+            /** @type {Record<string, string>[]} */
+            let parsedRows = [];
+            /** @type {string[]} */
+            let columnKeys = [];
+
+            const els = {
+                dataFile: document.getElementById('data-file'),
+                templateFile: document.getElementById('template-file'),
+                dataFormat: document.getElementById('data-format'),
+                delimiter: document.getElementById('delimiter'),
+                loadSample: document.getElementById('load-sample-btn'),
+                analyze: document.getElementById('analyze-btn'),
+                analysisCard: document.getElementById('analysis-card'),
+                status: document.getElementById('status'),
+                stats: document.getElementById('stats'),
+                columnsList: document.getElementById('columns-list'),
+                previewTable: document.getElementById('preview-table'),
+                templateText: document.getElementById('template-text'),
+                outputMode: document.getElementById('output-mode'),
+                rowSeparator: document.getElementById('row-separator'),
+                generate: document.getElementById('generate-btn'),
+                copy: document.getElementById('copy-btn'),
+                download: document.getElementById('download-btn'),
+                outputText: document.getElementById('output-text'),
+                toast: document.getElementById('toast')
+            };
+
+            function showToast(msg) {
+                els.toast.textContent = msg;
+                els.toast.classList.add('show');
+                clearTimeout(showToast._t);
+                showToast._t = setTimeout(() => els.toast.classList.remove('show'), 2200);
+            }
+
+            function setStatus(type, message) {
+                els.status.className = 'status show ' + type;
+                els.status.textContent = message;
+            }
+
+            function normalizeKey(key) {
+                return String(key || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^\w]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+            }
+
+            function detectDelimiter(line) {
+                const candidates = [',', '\t', ';', '|'];
+                let best = ',';
+                let bestCount = -1;
+                for (const d of candidates) {
+                    const count = line.split(d).length;
+                    if (count > bestCount) {
+                        bestCount = count;
+                        best = d;
+                    }
+                }
+                return best;
+            }
+
+            function splitCSVLine(line, delim) {
+                const out = [];
+                let cur = '';
+                let inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') {
+                        if (inQ && line[i + 1] === '"') {
+                            cur += '"';
+                            i++;
+                        } else {
+                            inQ = !inQ;
+                        }
+                        continue;
+                    }
+                    if (c === delim && !inQ) {
+                        out.push(cur);
+                        cur = '';
+                        continue;
+                    }
+                    cur += c;
+                }
+                out.push(cur);
+                return out.map((s) => s.trim());
+            }
+
+            function parseDelimited(text, forcedDelim) {
+                const lines = text.split(/\r?\n/).filter((l) => l.trim());
+                if (!lines.length) return [];
+
+                const delim = forcedDelim === 'auto' || !forcedDelim
+                    ? detectDelimiter(lines[0])
+                    : forcedDelim;
+
+                const headers = splitCSVLine(lines[0], delim).map((h, i) => {
+                    const n = normalizeKey(h);
+                    return n || 'column_' + (i + 1);
+                });
+
+                const rows = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = splitCSVLine(lines[i], delim);
+                    if (cols.every((c) => !c)) continue;
+                    const row = {};
+                    headers.forEach((h, idx) => {
+                        row[h] = cols[idx] ?? '';
+                    });
+                    rows.push(row);
+                }
+                return rows;
+            }
+
+            function parseKeyValueLines(text) {
+                const rows = [];
+                let current = {};
+
+                const flush = () => {
+                    if (Object.keys(current).length) rows.push(current);
+                    current = {};
+                };
+
+                for (const raw of text.split(/\r?\n/)) {
+                    const line = raw.trim();
+                    if (!line) {
+                        flush();
+                        continue;
+                    }
+                    const match = line.match(/^([^:=|]+?)[:=|]\s*(.*)$/);
+                    if (!match) continue;
+                    current[normalizeKey(match[1])] = match[2].trim();
+                }
+                flush();
+                return rows.length ? rows : [current];
+            }
+
+            function parseKeyValueBlocks(text) {
+                const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+                if (!blocks.length) return parseKeyValueLines(text);
+
+                return blocks.map((block) => {
+                    const row = {};
+                    for (const raw of block.split(/\r?\n/)) {
+                        const line = raw.trim();
+                        if (!line) continue;
+                        const match = line.match(/^([^:=|]+?)[:=|]\s*(.*)$/);
+                        if (match) row[normalizeKey(match[1])] = match[2].trim();
+                    }
+                    return row;
+                }).filter((r) => Object.keys(r).length);
+            }
+
+            function parseDataText(text, format, delimChoice) {
+                const forcedDelim = delimChoice === 'auto' ? null : delimChoice;
+
+                if (format === 'csv') return parseDelimited(text, forcedDelim);
+                if (format === 'kv') return parseKeyValueLines(text);
+                if (format === 'blocks') return parseKeyValueBlocks(text);
+
+                // auto: try delimited first if header looks tabular
+                const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || '';
+                const looksDelimited = /[,;\t|]/.test(firstLine) && firstLine.split(/[,;\t|]/).length > 1;
+
+                if (looksDelimited) return parseDelimited(text, forcedDelim);
+
+                const blockRows = parseKeyValueBlocks(text);
+                if (blockRows.length) return blockRows;
+
+                return parseKeyValueLines(text);
+            }
+
+            function getRowValue(row, token) {
+                const key = normalizeKey(token);
+                if (key === 'row') return String(parsedRows.indexOf(row) + 1);
+                if (row[key] !== undefined) return row[key];
+                return null;
+            }
+
+            function applyPlaceholders(template, row, rowNumber) {
+                return template.replace(/\{\{\s*([^{}#/]+?)\s*\}\}/g, (full, name) => {
+                    const norm = normalizeKey(name);
+                    if (norm === 'row') return String(rowNumber);
+                    if (row[norm] !== undefined) return row[norm];
+                    return full;
+                });
+            }
+
+            function extractEachBlock(template) {
+                const re = /\{\{#each\}\}([\s\S]*?)\{\{\/each\}\}/i;
+                const match = template.match(re);
+                if (!match) return null;
+                return {
+                    before: template.slice(0, match.index),
+                    block: match[1],
+                    after: template.slice(match.index + match[0].length)
+                };
+            }
+
+            function generateOutput(template, mode, separator) {
+                if (!parsedRows.length) throw new Error('No data rows to process. Analyze a data file first.');
+                if (!template.trim()) throw new Error('Template is empty.');
+
+                const eachParts = extractEachBlock(template);
+
+                if (mode === 'each-block' || eachParts) {
+                    const parts = eachParts || extractEachBlock(template + '\n{{#each}}\n{{/each}}');
+                    if (!parts) throw new Error('Output mode requires a {{#each}}…{{/each}} block in the template.');
+
+                    const renderedRows = parsedRows.map((row, i) =>
+                        applyPlaceholders(parts.block, row, i + 1)
+                    );
+
+                    const head = applyPlaceholders(parts.before, parsedRows[0], 1);
+                    const tail = parsedRows.length === 1
+                        ? applyPlaceholders(parts.after, parsedRows[0], 1)
+                        : parts.after.replace(/\{\{\s*([^{}#/]+?)\s*\}\}/g, '');
+
+                    return (head + renderedRows.join(separator) + tail).trim();
+                }
+
+                if (mode === 'single') {
+                    return applyPlaceholders(template, parsedRows[0], 1).trim();
+                }
+
+                return parsedRows
+                    .map((row, i) => applyPlaceholders(template, row, i + 1))
+                    .join(separator)
+                    .trim();
+            }
+
+            function renderAnalysis(rows) {
+                parsedRows = rows;
+                columnKeys = rows.length
+                    ? [...new Set(rows.flatMap((r) => Object.keys(r)))]
+                    : [];
+
+                els.analysisCard.hidden = false;
+
+                if (!rows.length) {
+                    setStatus('warn', 'File parsed successfully but no data rows were found. Check format and delimiter settings.');
+                    els.stats.innerHTML = '';
+                    els.columnsList.innerHTML = '';
+                    els.previewTable.querySelector('thead').innerHTML = '';
+                    els.previewTable.querySelector('tbody').innerHTML = '';
+                    return;
+                }
+
+                setStatus('success', `Parsed ${rows.length} row${rows.length === 1 ? '' : 's'} with ${columnKeys.length} column${columnKeys.length === 1 ? '' : 's'}.`);
+
+                els.stats.innerHTML = [
+                    `<div class="stat"><strong>${rows.length}</strong> rows</div>`,
+                    `<div class="stat"><strong>${columnKeys.length}</strong> columns</div>`,
+                    `<div class="stat">Preview: first <strong>${Math.min(8, rows.length)}</strong> rows</div>`
+                ].join('');
+
+                els.columnsList.innerHTML = columnKeys
+                    .map((k) => `<span class="chip">{{${k}}}</span>`)
+                    .join('');
+
+                const thead = els.previewTable.querySelector('thead');
+                const tbody = els.previewTable.querySelector('tbody');
+                thead.innerHTML = '<tr>' + columnKeys.map((k) => `<th>${escapeHtml(k)}</th>`).join('') + '</tr>';
+                tbody.innerHTML = rows.slice(0, 8).map((row) =>
+                    '<tr>' + columnKeys.map((k) => `<td>${escapeHtml(row[k] ?? '')}</td>`).join('') + '</tr>'
+                ).join('');
+            }
+
+            function escapeHtml(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function readFile(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result || ''));
+                    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+                    reader.readAsText(file);
+                });
+            }
+
+            async function analyzeFromText(text) {
+                const format = els.dataFormat.value;
+                const delim = els.delimiter.value;
+                const rows = parseDataText(text, format, delim);
+                renderAnalysis(rows);
+            }
+
+            els.loadSample.addEventListener('click', () => {
+                els.templateText.value = SAMPLE_TEMPLATE;
+                analyzeFromText(SAMPLE_DATA);
+                els.outputMode.value = 'per-row';
+                showToast('Sample data and template loaded');
+            });
+
+            els.analyze.addEventListener('click', async () => {
+                try {
+                    if (els.dataFile.files[0]) {
+                        const text = await readFile(els.dataFile.files[0]);
+                        await analyzeFromText(text);
+                    } else {
+                        setStatus('error', 'Choose a data file or use "Load sample data & template".');
+                        els.analysisCard.hidden = false;
+                    }
+                } catch (err) {
+                    setStatus('error', err.message || String(err));
+                    els.analysisCard.hidden = false;
+                }
+            });
+
+            els.dataFile.addEventListener('change', async () => {
+                if (!els.dataFile.files[0]) return;
+                try {
+                    const text = await readFile(els.dataFile.files[0]);
+                    await analyzeFromText(text);
+                } catch (err) {
+                    setStatus('error', err.message || String(err));
+                    els.analysisCard.hidden = false;
+                }
+            });
+
+            els.templateFile.addEventListener('change', async () => {
+                const file = els.templateFile.files[0];
+                if (!file) return;
+                try {
+                    els.templateText.value = await readFile(file);
+                    showToast('Template loaded');
+                } catch (err) {
+                    showToast('Failed to read template');
+                }
+            });
+
+            els.generate.addEventListener('click', () => {
+                try {
+                    const sep = els.rowSeparator.value.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+                    const out = generateOutput(els.templateText.value, els.outputMode.value, sep);
+                    els.outputText.value = out;
+                    showToast('Output generated');
+                } catch (err) {
+                    els.outputText.value = '';
+                    showToast(err.message || 'Generation failed');
+                }
+            });
+
+            els.copy.addEventListener('click', async () => {
+                if (!els.outputText.value) {
+                    showToast('Nothing to copy');
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(els.outputText.value);
+                    showToast('Copied to clipboard');
+                } catch {
+                    els.outputText.select();
+                    document.execCommand('copy');
+                    showToast('Copied to clipboard');
+                }
+            });
+
+            els.download.addEventListener('click', () => {
+                if (!els.outputText.value) {
+                    showToast('Nothing to download');
+                    return;
+                }
+                const blob = new Blob([els.outputText.value], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'generated-output.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('Download started');
+            });
+        })();
+    </script>
+</body>
+
+</html>

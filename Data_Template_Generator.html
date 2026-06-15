@@ -164,17 +164,6 @@
             border: 1px dashed rgba(255, 255, 255, 0.12);
         }
 
-        .checkbox-field {
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            font-size: 0.82rem;
-            color: #94a3b8;
-            padding-top: 1.65rem;
-        }
-
-        .checkbox-field input { accent-color: var(--primary); }
-
         .status {
             font-size: 0.82rem;
             padding: 0.55rem 0.75rem;
@@ -336,10 +325,6 @@
                     <label for="report-title">Report title suffix (optional)</label>
                     <input type="text" id="report-title" placeholder="Auto-detected from policy">
                 </div>
-                <label class="checkbox-field" id="device-level-field" hidden>
-                    <input type="checkbox" id="include-device-level">
-                    Include device-level violations (no interface detail)
-                </label>
             </div>
             <div class="actions">
                 <button type="button" class="btn btn-primary" id="analyze-btn" disabled>Analyze &amp; generate report</button>
@@ -347,10 +332,10 @@
             </div>
             <div class="file-stats" id="file-stats" hidden></div>
             <p class="hint">
-                Only the last column (<strong>Compliance Status</strong>) decides the row status — e.g. <strong>VIOLATION</strong>, <strong>COMPLIANT</strong>, or <strong>NOT_REQUIRED</strong>.
-                The word <strong>violation</strong> inside the <strong>Result</strong> JSON does not count if the compliance column says otherwise.
-                If the file contains more than one compliance export (e.g. port-channel and config version pasted together), choose which <strong>section</strong> to report on.
-                One report line is produced per qualifying row in that section.
+                Rows are included only when the <strong>Compliance Status</strong> column (last column) exactly matches the chosen status
+                — e.g. <strong>VIOLATION</strong>, <strong>COMPLIANT</strong>, or <strong>NOT_REQUIRED</strong>.
+                Text inside the <strong>Result</strong> JSON is never used to decide status.
+                If the file contains more than one compliance export pasted together, choose which section to report on.
             </p>
         </div>
 
@@ -445,8 +430,6 @@
                 statusFilter: document.getElementById('status-filter'),
                 sectionFilter: document.getElementById('section-filter'),
                 sectionField: document.getElementById('section-field'),
-                includeDeviceLevel: document.getElementById('include-device-level'),
-                deviceLevelField: document.getElementById('device-level-field'),
                 titleSuffix: document.getElementById('report-title'),
                 analyze: document.getElementById('analyze-btn'),
                 download: document.getElementById('download-btn'),
@@ -529,11 +512,19 @@
 
             function normalizeComplianceText(text) {
                 const header = COMPLIANCE_HEADER;
-                const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                return String(text || '').replace(
-                    new RegExp('(?<=[^\\r\\n])' + escaped, 'g'),
-                    '\n' + header
-                );
+                let s = String(text || '');
+                let pos = 0;
+                while (pos < s.length) {
+                    const idx = s.indexOf(header, pos);
+                    if (idx === -1) break;
+                    if (idx > 0 && s.charAt(idx - 1) !== '\n' && s.charAt(idx - 1) !== '\r') {
+                        s = s.slice(0, idx) + '\n' + s.slice(idx);
+                        pos = idx + header.length + 1;
+                    } else {
+                        pos = idx + header.length;
+                    }
+                }
+                return s;
             }
 
             function parseSectionCSV(text) {
@@ -555,7 +546,7 @@
                         row[h] = cols[idx] ?? '';
                     });
 
-                    const rawStatus = String(row[statusHeader] ?? cols[cols.length - 1] ?? '').trim();
+                    const rawStatus = String(cols[cols.length - 1] ?? row[statusHeader] ?? '').trim();
                     row._complianceRaw = rawStatus;
                     row['Compliance Status'] = rawStatus;
                     if (!rawStatus) continue;
@@ -763,29 +754,18 @@
                 return friendly + ' — Not Required';
             }
 
-            function rowHasInterfaceDetail(row, statusFilter) {
-                return extractInterfacesFromResult(row['Result'] || '', statusFilter).length > 0;
-            }
-
-            function buildReport(rows, statusFilter, sectionId, includeDeviceLevel, titleSuffix) {
+            function buildReport(rows, statusFilter, sectionId, titleSuffix) {
                 const cfg = STATUS_CONFIG[statusFilter];
                 if (!cfg) throw new Error('Unknown status filter.');
 
                 const scopedRows = rowsForSectionScope(rows, sectionId);
-                let filteredRows = scopedRows.filter((r) => rowMatchesStatusFilter(r, statusFilter));
-
-                if (statusFilter === 'VIOLATION' && !includeDeviceLevel) {
-                    filteredRows = filteredRows.filter((r) => rowHasInterfaceDetail(r, statusFilter));
-                }
+                const filteredRows = scopedRows.filter((r) => rowMatchesStatusFilter(r, statusFilter));
 
                 if (!filteredRows.length) {
                     const sectionHint = sectionId && sectionId !== 'ALL' && fileSections.length > 1
                         ? ' in the selected compliance section'
                         : '';
-                    const detailHint = statusFilter === 'VIOLATION' && !includeDeviceLevel
-                        ? ' with interface detail'
-                        : '';
-                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + detailHint + sectionHint + '.');
+                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + sectionHint + '.');
                 }
 
                 const policies = [...new Set(filteredRows.map((r) => cleanField(r['Policy Name'])).filter(Boolean))];
@@ -857,7 +837,6 @@
                     rule,
                     sectionId: sectionId || 'ALL',
                     sectionLabel: sectionMeta ? friendlyPolicyName(sectionMeta.policy) : '',
-                    includeDeviceLevel: !!includeDeviceLevel,
                     matchingRows: filteredRows.length,
                     titleSuffix: titleSuffix || '',
                     generatedAt: formatReportTimestamp(new Date()),
@@ -913,12 +892,9 @@
                 const sectionNote = fileSections.length > 1 && data.sectionId !== 'ALL'
                     ? ' from ' + (data.sectionLabel || 'selected section')
                     : '';
-                const detailNote = data.statusFilter === 'VIOLATION' && !data.includeDeviceLevel
-                    ? ' (interface detail only)'
-                    : '';
                 setStatus('success',
                     data.summary.matchingRows + ' row' + (data.summary.matchingRows === 1 ? '' : 's') +
-                    ' with Compliance Status = ' + cfg.label.toUpperCase() + detailNote + sectionNote + hostNote + ', ' +
+                    ' with Compliance Status = ' + cfg.label.toUpperCase() + sectionNote + hostNote + ', ' +
                     data.summary.uniqueSubnets + ' subnet' + (data.summary.uniqueSubnets === 1 ? '' : 's') + '.');
 
                 const sectionNote = data.sectionLabel
@@ -1050,11 +1026,6 @@
                 });
             }
 
-            function updateDeviceLevelField() {
-                const show = els.statusFilter.value === 'VIOLATION';
-                els.deviceLevelField.hidden = !show;
-            }
-
             function generateReport() {
                 if (!parsedRows.length) {
                     setStatus('error', 'Upload a compliance export file first.');
@@ -1067,9 +1038,8 @@
                     const sectionId = fileSections.length > 1
                         ? (els.sectionFilter.value || fileSections[0].id)
                         : 'ALL';
-                    const includeDeviceLevel = els.includeDeviceLevel.checked;
                     const suffix = els.titleSuffix.value.trim();
-                    const data = buildReport(parsedRows, statusFilter, sectionId, includeDeviceLevel, suffix);
+                    const data = buildReport(parsedRows, statusFilter, sectionId, suffix);
                     if (!suffix && data.policy) {
                         els.titleSuffix.placeholder = defaultTitleSuffix(data.policy, statusFilter)
                             .replace(/^.*\u2014\s*/, '');
@@ -1107,9 +1077,7 @@
 
                     renderFileStats(parsedRows);
                     populateSectionFilter(fileSections);
-                    updateDeviceLevelField();
                     els.statusFilter.disabled = false;
-                    els.includeDeviceLevel.disabled = false;
                     els.analyze.disabled = false;
                     generateReport();
                 } catch (err) {
@@ -1119,8 +1087,6 @@
                     els.statusFilter.disabled = true;
                     els.sectionFilter.disabled = true;
                     els.sectionField.hidden = true;
-                    els.includeDeviceLevel.disabled = true;
-                    els.deviceLevelField.hidden = true;
                     els.analyze.disabled = true;
                     els.download.disabled = true;
                     els.fileStats.hidden = true;
@@ -1131,12 +1097,8 @@
 
             els.analyze.addEventListener('click', generateReport);
             els.file.addEventListener('change', loadFile);
-            els.statusFilter.addEventListener('change', () => {
-                updateDeviceLevelField();
-                generateReport();
-            });
+            els.statusFilter.addEventListener('change', generateReport);
             els.sectionFilter.addEventListener('change', generateReport);
-            els.includeDeviceLevel.addEventListener('change', generateReport);
 
             els.download.addEventListener('click', () => {
                 if (!report) {

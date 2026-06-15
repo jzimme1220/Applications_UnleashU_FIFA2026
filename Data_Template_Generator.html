@@ -158,6 +158,23 @@
 
         .file-stat strong { color: #e2e8f0; }
 
+        .file-stat-note {
+            color: #94a3b8;
+            background: transparent;
+            border: 1px dashed rgba(255, 255, 255, 0.12);
+        }
+
+        .checkbox-field {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.82rem;
+            color: #94a3b8;
+            padding-top: 1.65rem;
+        }
+
+        .checkbox-field input { accent-color: var(--primary); }
+
         .status {
             font-size: 0.82rem;
             padding: 0.55rem 0.75rem;
@@ -311,10 +328,18 @@
                         <option value="NOT_REQUIRED">Other (Not Required)</option>
                     </select>
                 </div>
+                <div class="field" style="max-width:320px;" id="section-field" hidden>
+                    <label for="section-filter">Compliance section</label>
+                    <select id="section-filter" disabled></select>
+                </div>
                 <div class="field" style="max-width:280px;">
                     <label for="report-title">Report title suffix (optional)</label>
                     <input type="text" id="report-title" placeholder="Auto-detected from policy">
                 </div>
+                <label class="checkbox-field" id="device-level-field" hidden>
+                    <input type="checkbox" id="include-device-level">
+                    Include device-level violations (no interface detail)
+                </label>
             </div>
             <div class="actions">
                 <button type="button" class="btn btn-primary" id="analyze-btn" disabled>Analyze &amp; generate report</button>
@@ -324,7 +349,8 @@
             <p class="hint">
                 Only the last column (<strong>Compliance Status</strong>) decides the row status — e.g. <strong>VIOLATION</strong>, <strong>COMPLIANT</strong>, or <strong>NOT_REQUIRED</strong>.
                 The word <strong>violation</strong> inside the <strong>Result</strong> JSON does not count if the compliance column says otherwise.
-                Each qualifying row becomes one report line; data (IP, model, series, message) is taken from that row.
+                If the file contains more than one compliance export (e.g. port-channel and config version pasted together), choose which <strong>section</strong> to report on.
+                One report line is produced per qualifying row in that section.
             </p>
         </div>
 
@@ -404,14 +430,23 @@
                 }
             };
 
+            const COMPLIANCE_HEADER =
+                'Policy Name,Policy Description,Rule Group Name,Rule Group Description,Rule Name,Rule Description,Host Name,Series,Model,Rule Type,Variables,Result,Violation Severity,Violation Message,Compliance Status';
+
             /** @type {Record<string, string>[]} */
             let parsedRows = [];
+            /** @type {{ id: string, policy: string, rowCount: number, violationCount: number }[]} */
+            let fileSections = [];
             /** @type {null | object} */
             let report = null;
 
             const els = {
                 file: document.getElementById('compliance-file'),
                 statusFilter: document.getElementById('status-filter'),
+                sectionFilter: document.getElementById('section-filter'),
+                sectionField: document.getElementById('section-field'),
+                includeDeviceLevel: document.getElementById('include-device-level'),
+                deviceLevelField: document.getElementById('device-level-field'),
                 titleSuffix: document.getElementById('report-title'),
                 analyze: document.getElementById('analyze-btn'),
                 download: document.getElementById('download-btn'),
@@ -492,32 +527,122 @@
                 return classifyComplianceStatus(complianceColumnRaw(row)) === statusFilter;
             }
 
-            function parseComplianceCSV(text) {
+            function normalizeComplianceText(text) {
+                const header = COMPLIANCE_HEADER;
+                const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return String(text || '').replace(
+                    new RegExp('(?<=[^\\r\\n])' + escaped, 'g'),
+                    '\n' + header
+                );
+            }
+
+            function parseSectionCSV(text) {
                 const lines = text.split(/\r?\n/).filter((l) => l.length);
                 if (!lines.length) return { headers: [], rows: [] };
 
                 const delim = lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ',';
                 const headers = splitCSVLine(lines[0], delim);
-                const statusHeader = headers[headers.length - 1];
+                const statusHeader = headers.find((h) => /compliance\s*status/i.test(h)) || headers[headers.length - 1];
                 const rows = [];
 
                 for (let i = 1; i < lines.length; i++) {
                     const cols = splitCSVLine(lines[i], delim);
                     if (!cols.some((c) => c)) continue;
+                    if (cols[0] === 'Policy Name' && cols[cols.length - 1] === 'Compliance Status') continue;
 
                     const row = {};
                     headers.forEach((h, idx) => {
                         row[h] = cols[idx] ?? '';
                     });
 
-                    const rawStatus = String(row[statusHeader] ?? '').trim();
+                    const rawStatus = String(row[statusHeader] ?? cols[cols.length - 1] ?? '').trim();
                     row._complianceRaw = rawStatus;
                     row['Compliance Status'] = rawStatus;
                     if (!rawStatus) continue;
                     rows.push(row);
                 }
 
-                return { headers, rows };
+                return { headers, rows, statusHeader };
+            }
+
+            function splitComplianceSections(text) {
+                const normalized = normalizeComplianceText(text);
+                const header = COMPLIANCE_HEADER;
+                const parts = normalized.split(header);
+                const sections = [];
+
+                parts.forEach((part, index) => {
+                    const chunk = (index === 0 ? part : header + part).trim();
+                    if (!chunk || !chunk.includes('Policy Name')) return;
+
+                    const parsed = parseSectionCSV(chunk);
+                    if (!parsed.rows.length) return;
+
+                    const policy = cleanField(parsed.rows[0]['Policy Name']) || ('Section ' + (sections.length + 1));
+                    const violationCount = parsed.rows.filter(
+                        (r) => classifyComplianceStatus(complianceColumnRaw(r)) === 'VIOLATION'
+                    ).length;
+
+                const sectionId = String(sections.length);
+                    sections.push({
+                        id: sectionId,
+                        policy,
+                        rowCount: parsed.rows.length,
+                        violationCount,
+                        rows: parsed.rows.map((row) => ({
+                            ...row,
+                            _sectionId: sectionId
+                        }))
+                    });
+                });
+
+                return sections;
+            }
+
+            function parseComplianceCSV(text) {
+                const sections = splitComplianceSections(text);
+                fileSections = sections.map((s) => ({
+                    id: s.id,
+                    policy: s.policy,
+                    rowCount: s.rowCount,
+                    violationCount: s.violationCount
+                }));
+
+                const rows = sections.flatMap((s) => s.rows);
+                const headers = rows.length
+                    ? Object.keys(rows[0]).filter((k) => !k.startsWith('_'))
+                    : [];
+
+                return { headers, rows, sections };
+            }
+
+            function rowsForSectionScope(rows, sectionId) {
+                if (!sectionId || sectionId === 'ALL') return rows;
+                return rows.filter((r) => String(r._sectionId ?? '') === String(sectionId));
+            }
+
+            function populateSectionFilter(sections) {
+                if (!sections || sections.length <= 1) {
+                    els.sectionField.hidden = true;
+                    els.sectionFilter.disabled = true;
+                    els.sectionFilter.innerHTML = '';
+                    return;
+                }
+
+                els.sectionField.hidden = false;
+                els.sectionFilter.disabled = false;
+                els.sectionFilter.innerHTML = sections.map((s) => {
+                    const friendly = s.policy.replace(/^FWC26_/, '').replace(/_/g, ' ');
+                    const label = friendly + ' (' + s.violationCount + ' violation' + (s.violationCount === 1 ? '' : 's') + ')';
+                    return '<option value="' + escapeHtml(s.id) + '">' + escapeHtml(label) + '</option>';
+                }).join('') +
+                    '<option value="ALL">All sections (' + sections.reduce((n, s) => n + s.violationCount, 0) + ' violations)</option>';
+
+                els.sectionFilter.value = sections[0].id;
+            }
+
+            function friendlyPolicyName(policy) {
+                return String(policy || '').replace(/^FWC26_/, '').replace(/_/g, ' ');
             }
 
             function countStatuses(rows) {
@@ -638,20 +763,39 @@
                 return friendly + ' — Not Required';
             }
 
-            function buildReport(rows, statusFilter, titleSuffix) {
+            function rowHasInterfaceDetail(row, statusFilter) {
+                return extractInterfacesFromResult(row['Result'] || '', statusFilter).length > 0;
+            }
+
+            function buildReport(rows, statusFilter, sectionId, includeDeviceLevel, titleSuffix) {
                 const cfg = STATUS_CONFIG[statusFilter];
                 if (!cfg) throw new Error('Unknown status filter.');
 
-                const filteredRows = rows.filter((r) => rowMatchesStatusFilter(r, statusFilter));
+                const scopedRows = rowsForSectionScope(rows, sectionId);
+                let filteredRows = scopedRows.filter((r) => rowMatchesStatusFilter(r, statusFilter));
+
+                if (statusFilter === 'VIOLATION' && !includeDeviceLevel) {
+                    filteredRows = filteredRows.filter((r) => rowHasInterfaceDetail(r, statusFilter));
+                }
 
                 if (!filteredRows.length) {
-                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + ' in the file.');
+                    const sectionHint = sectionId && sectionId !== 'ALL' && fileSections.length > 1
+                        ? ' in the selected compliance section'
+                        : '';
+                    const detailHint = statusFilter === 'VIOLATION' && !includeDeviceLevel
+                        ? ' with interface detail'
+                        : '';
+                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + detailHint + sectionHint + '.');
                 }
 
                 const policies = [...new Set(filteredRows.map((r) => cleanField(r['Policy Name'])).filter(Boolean))];
                 const rules = [...new Set(filteredRows.map((r) => cleanField(r['Rule Name'])).filter(Boolean))];
                 const policy = policies.length === 1 ? policies[0] : policies.join(', ');
                 const rule = rules.length === 1 ? rules[0] : rules.join(', ');
+
+                const sectionMeta = sectionId && sectionId !== 'ALL' && fileSections.length > 1
+                    ? fileSections.find((s) => s.id === sectionId)
+                    : null;
 
                 const devices = filteredRows
                     .map((row) => {
@@ -711,6 +855,9 @@
                     statusFilter,
                     policy,
                     rule,
+                    sectionId: sectionId || 'ALL',
+                    sectionLabel: sectionMeta ? friendlyPolicyName(sectionMeta.policy) : '',
+                    includeDeviceLevel: !!includeDeviceLevel,
                     matchingRows: filteredRows.length,
                     titleSuffix: titleSuffix || '',
                     generatedAt: formatReportTimestamp(new Date()),
@@ -730,7 +877,8 @@
             function renderFileStats(rows) {
                 const counts = countStatuses(rows);
                 els.fileStats.hidden = false;
-                els.fileStats.innerHTML = [
+
+                let html = [
                     ['VIOLATION', counts.VIOLATION],
                     ['COMPLIANT', counts.COMPLIANT],
                     ['NOT_REQUIRED', counts.NOT_REQUIRED],
@@ -738,6 +886,17 @@
                 ].filter(([, n]) => n > 0).map(([label, n]) =>
                     '<span class="file-stat"><strong>' + n + '</strong> ' + label + '</span>'
                 ).join('');
+
+                if (fileSections.length > 1) {
+                    html += '<span class="file-stat file-stat-note">' + fileSections.length +
+                        ' compliance sections detected</span>';
+                    fileSections.forEach((s) => {
+                        html += '<span class="file-stat"><strong>' + s.violationCount + '</strong> ' +
+                            escapeHtml(friendlyPolicyName(s.policy)) + ' violations</span>';
+                    });
+                }
+
+                els.fileStats.innerHTML = html;
             }
 
             function renderReport(data) {
@@ -751,16 +910,29 @@
                 const hostNote = data.summary.uniqueHosts !== data.summary.totalDevices
                     ? ' (' + data.summary.uniqueHosts + ' unique switch' + (data.summary.uniqueHosts === 1 ? '' : 'es') + ')'
                     : '';
+                const sectionNote = fileSections.length > 1 && data.sectionId !== 'ALL'
+                    ? ' from ' + (data.sectionLabel || 'selected section')
+                    : '';
+                const detailNote = data.statusFilter === 'VIOLATION' && !data.includeDeviceLevel
+                    ? ' (interface detail only)'
+                    : '';
                 setStatus('success',
                     data.summary.matchingRows + ' row' + (data.summary.matchingRows === 1 ? '' : 's') +
-                    ' with Compliance Status = ' + cfg.label.toUpperCase() + hostNote + ', ' +
+                    ' with Compliance Status = ' + cfg.label.toUpperCase() + detailNote + sectionNote + hostNote + ', ' +
                     data.summary.uniqueSubnets + ' subnet' + (data.summary.uniqueSubnets === 1 ? '' : 's') + '.');
+
+                const sectionNote = data.sectionLabel
+                    ? ' &nbsp;|&nbsp; Section: <strong>' + escapeHtml(data.sectionLabel) + '</strong>'
+                    : (fileSections.length > 1 && data.sectionId === 'ALL'
+                        ? ' &nbsp;|&nbsp; Section: <strong>All sections</strong>'
+                        : '');
 
                 els.reportMeta.innerHTML =
                     '<strong>' + escapeHtml(title) + '</strong><br>' +
                     'Report generated: ' + escapeHtml(data.generatedAt) +
                     ' &nbsp;|&nbsp; Rule: <strong>' + escapeHtml(data.rule) + '</strong>' +
-                    ' &nbsp;|&nbsp; Policy: <strong>' + escapeHtml(data.policy) + '</strong>';
+                    ' &nbsp;|&nbsp; Policy: <strong>' + escapeHtml(data.policy) + '</strong>' +
+                    sectionNote;
 
                 els.summaryGrid.innerHTML = [
                     { label: cfg.totalLabel, value: data.summary.totalDevices, accent: true },
@@ -878,6 +1050,11 @@
                 });
             }
 
+            function updateDeviceLevelField() {
+                const show = els.statusFilter.value === 'VIOLATION';
+                els.deviceLevelField.hidden = !show;
+            }
+
             function generateReport() {
                 if (!parsedRows.length) {
                     setStatus('error', 'Upload a compliance export file first.');
@@ -887,8 +1064,12 @@
 
                 try {
                     const statusFilter = els.statusFilter.value;
+                    const sectionId = fileSections.length > 1
+                        ? (els.sectionFilter.value || fileSections[0].id)
+                        : 'ALL';
+                    const includeDeviceLevel = els.includeDeviceLevel.checked;
                     const suffix = els.titleSuffix.value.trim();
-                    const data = buildReport(parsedRows, statusFilter, suffix);
+                    const data = buildReport(parsedRows, statusFilter, sectionId, includeDeviceLevel, suffix);
                     if (!suffix && data.policy) {
                         els.titleSuffix.placeholder = defaultTitleSuffix(data.policy, statusFilter)
                             .replace(/^.*\u2014\s*/, '');
@@ -911,19 +1092,35 @@
                     const text = await readFile(file);
                     const parsed = parseComplianceCSV(text);
                     parsedRows = parsed.rows;
+                    fileSections = parsed.sections
+                        ? parsed.sections.map((s) => ({
+                            id: s.id,
+                            policy: s.policy,
+                            rowCount: s.rowCount,
+                            violationCount: s.violationCount
+                        }))
+                        : [];
 
                     if (!parsedRows.length) {
                         throw new Error('No valid data rows found in file.');
                     }
 
                     renderFileStats(parsedRows);
+                    populateSectionFilter(fileSections);
+                    updateDeviceLevelField();
                     els.statusFilter.disabled = false;
+                    els.includeDeviceLevel.disabled = false;
                     els.analyze.disabled = false;
                     generateReport();
                 } catch (err) {
                     parsedRows = [];
+                    fileSections = [];
                     report = null;
                     els.statusFilter.disabled = true;
+                    els.sectionFilter.disabled = true;
+                    els.sectionField.hidden = true;
+                    els.includeDeviceLevel.disabled = true;
+                    els.deviceLevelField.hidden = true;
                     els.analyze.disabled = true;
                     els.download.disabled = true;
                     els.fileStats.hidden = true;
@@ -934,7 +1131,12 @@
 
             els.analyze.addEventListener('click', generateReport);
             els.file.addEventListener('change', loadFile);
-            els.statusFilter.addEventListener('change', generateReport);
+            els.statusFilter.addEventListener('change', () => {
+                updateDeviceLevelField();
+                generateReport();
+            });
+            els.sectionFilter.addEventListener('change', generateReport);
+            els.includeDeviceLevel.addEventListener('change', generateReport);
 
             els.download.addEventListener('click', () => {
                 if (!report) {

@@ -158,6 +158,12 @@
 
         .file-stat strong { color: #e2e8f0; }
 
+        .file-stat-note {
+            color: #94a3b8;
+            background: transparent;
+            border: 1px dashed rgba(255, 255, 255, 0.12);
+        }
+
         .status {
             font-size: 0.82rem;
             padding: 0.55rem 0.75rem;
@@ -311,6 +317,10 @@
                         <option value="NOT_REQUIRED">Other (Not Required)</option>
                     </select>
                 </div>
+                <div class="field" style="max-width:340px;" id="run-field" hidden>
+                    <label for="run-filter">Compliance check in file</label>
+                    <select id="run-filter" disabled></select>
+                </div>
                 <div class="field" style="max-width:280px;">
                     <label for="report-title">Report title suffix (optional)</label>
                     <input type="text" id="report-title" placeholder="Auto-detected from policy">
@@ -322,10 +332,11 @@
             </div>
             <div class="file-stats" id="file-stats" hidden></div>
             <p class="hint">
-                A row is included only when the last column (<strong>Compliance Status</strong>) exactly matches the chosen status
-                — <strong>VIOLATION</strong>, <strong>COMPLIANT</strong>, or <strong>NOT_REQUIRED</strong>.
-                The <strong>Result</strong> JSON is never used to decide status; <strong>violation</strong> text inside Result is ignored if the compliance column says otherwise.
-                Each matching row becomes one report line using that row&rsquo;s IP, model, series, and violation message.
+                Status comes only from the last column (<strong>Compliance Status</strong>) — exact match:
+                <strong>VIOLATION</strong>, <strong>COMPLIANT</strong>, or <strong>NOT_REQUIRED</strong>.
+                The <strong>Result</strong> JSON never decides status.
+                If the file contains more than one compliance check (different policies pasted together), the report uses the
+                <strong>first check only</strong> — the same block Excel shows when you filter by that policy name.
             </p>
         </div>
 
@@ -407,12 +418,16 @@
 
             /** @type {Record<string, string>[]} */
             let parsedRows = [];
+            /** @type {{ id: string, policy: string, rowCount: number, violationCount: number, rows: Record<string, string>[] }[]} */
+            let complianceRuns = [];
             /** @type {null | object} */
             let report = null;
 
             const els = {
                 file: document.getElementById('compliance-file'),
                 statusFilter: document.getElementById('status-filter'),
+                runFilter: document.getElementById('run-filter'),
+                runField: document.getElementById('run-field'),
                 titleSuffix: document.getElementById('report-title'),
                 analyze: document.getElementById('analyze-btn'),
                 download: document.getElementById('download-btn'),
@@ -521,6 +536,62 @@
                 }
 
                 return { headers, rows };
+            }
+
+            function friendlyPolicyName(policy) {
+                return String(policy || '').replace(/^FWC26_/, '').replace(/_/g, ' ');
+            }
+
+            function groupComplianceRuns(rows) {
+                const runs = [];
+                let current = null;
+
+                for (const row of rows) {
+                    const policy = cleanField(row['Policy Name']);
+                    if (!policy) continue;
+                    if (!current || current.policy !== policy) {
+                        current = { id: String(runs.length), policy, rows: [] };
+                        runs.push(current);
+                    }
+                    current.rows.push(row);
+                }
+
+                runs.forEach((run) => {
+                    const counts = countStatuses(run.rows);
+                    run.rowCount = run.rows.length;
+                    run.violationCount = counts.VIOLATION;
+                });
+
+                return runs;
+            }
+
+            function getActiveRun() {
+                if (!complianceRuns.length) return null;
+                const id = els.runFilter && !els.runFilter.disabled ? els.runFilter.value : complianceRuns[0].id;
+                return complianceRuns.find((run) => run.id === id) || complianceRuns[0];
+            }
+
+            function getReportRows() {
+                const run = getActiveRun();
+                return run ? run.rows : parsedRows;
+            }
+
+            function populateRunFilter(runs) {
+                if (!runs || runs.length <= 1) {
+                    els.runField.hidden = true;
+                    els.runFilter.disabled = true;
+                    els.runFilter.innerHTML = '';
+                    return;
+                }
+
+                els.runField.hidden = false;
+                els.runFilter.disabled = false;
+                els.runFilter.innerHTML = runs.map((run) => {
+                    const label = friendlyPolicyName(run.policy) +
+                        ' (' + run.violationCount + ' violation' + (run.violationCount === 1 ? '' : 's') + ')';
+                    return '<option value="' + escapeHtml(run.id) + '">' + escapeHtml(label) + '</option>';
+                }).join('');
+                els.runFilter.value = runs[0].id;
             }
 
             function countStatuses(rows) {
@@ -641,14 +712,17 @@
                 return friendly + ' — Not Required';
             }
 
-            function buildReport(rows, statusFilter, titleSuffix) {
+            function buildReport(rows, statusFilter, titleSuffix, runMeta) {
                 const cfg = STATUS_CONFIG[statusFilter];
                 if (!cfg) throw new Error('Unknown status filter.');
 
                 const filteredRows = rows.filter((r) => rowMatchesStatusFilter(r, statusFilter));
 
                 if (!filteredRows.length) {
-                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + ' in the file.');
+                    const runHint = runMeta && complianceRuns.length > 1
+                        ? ' for ' + friendlyPolicyName(runMeta.policy)
+                        : '';
+                    throw new Error('No rows with Compliance Status = ' + cfg.label.toUpperCase() + runHint + '.');
                 }
 
                 const policies = [...new Set(filteredRows.map((r) => cleanField(r['Policy Name'])).filter(Boolean))];
@@ -714,6 +788,9 @@
                     statusFilter,
                     policy,
                     rule,
+                    runPolicy: runMeta ? runMeta.policy : policy,
+                    runLabel: runMeta ? friendlyPolicyName(runMeta.policy) : '',
+                    ignoredRuns: runMeta ? Math.max(0, complianceRuns.length - 1) : 0,
                     matchingRows: filteredRows.length,
                     titleSuffix: titleSuffix || '',
                     generatedAt: formatReportTimestamp(new Date()),
@@ -731,9 +808,11 @@
             }
 
             function renderFileStats(rows) {
-                const counts = countStatuses(rows);
+                const scoped = getReportRows();
+                const counts = countStatuses(scoped);
                 els.fileStats.hidden = false;
-                els.fileStats.innerHTML = [
+
+                let html = [
                     ['VIOLATION', counts.VIOLATION],
                     ['COMPLIANT', counts.COMPLIANT],
                     ['NOT_REQUIRED', counts.NOT_REQUIRED],
@@ -741,6 +820,24 @@
                 ].filter(([, n]) => n > 0).map(([label, n]) =>
                     '<span class="file-stat"><strong>' + n + '</strong> ' + label + '</span>'
                 ).join('');
+
+                const activeRun = getActiveRun();
+                if (activeRun) {
+                    html += '<span class="file-stat file-stat-note">Reporting: <strong>' +
+                        escapeHtml(friendlyPolicyName(activeRun.policy)) + '</strong></span>';
+                }
+
+                if (complianceRuns.length > 1) {
+                    html += '<span class="file-stat file-stat-note">' + complianceRuns.length +
+                        ' checks in file</span>';
+                    complianceRuns.forEach((run) => {
+                        if (run.id === activeRun?.id) return;
+                        html += '<span class="file-stat"><strong>' + run.violationCount + '</strong> ' +
+                            escapeHtml(friendlyPolicyName(run.policy)) + ' (not in report)</span>';
+                    });
+                }
+
+                els.fileStats.innerHTML = html;
             }
 
             function renderReport(data) {
@@ -754,16 +851,26 @@
                 const hostNote = data.summary.uniqueHosts !== data.summary.totalDevices
                     ? ' (' + data.summary.uniqueHosts + ' unique switch' + (data.summary.uniqueHosts === 1 ? '' : 'es') + ')'
                     : '';
+                const runNote = data.runLabel
+                    ? ' for ' + data.runLabel
+                    : '';
                 setStatus('success',
                     data.summary.matchingRows + ' row' + (data.summary.matchingRows === 1 ? '' : 's') +
-                    ' with Compliance Status = ' + cfg.label.toUpperCase() + hostNote + ', ' +
+                    ' with Compliance Status = ' + cfg.label.toUpperCase() + runNote + hostNote + ', ' +
                     data.summary.uniqueSubnets + ' subnet' + (data.summary.uniqueSubnets === 1 ? '' : 's') + '.');
+
+                const ignoredNote = data.ignoredRuns > 0
+                    ? '<br><span style="color:#94a3b8;">' + data.ignoredRuns +
+                    ' other compliance check' + (data.ignoredRuns === 1 ? '' : 's') +
+                    ' in this file excluded from the report.</span>'
+                    : '';
 
                 els.reportMeta.innerHTML =
                     '<strong>' + escapeHtml(title) + '</strong><br>' +
                     'Report generated: ' + escapeHtml(data.generatedAt) +
                     ' &nbsp;|&nbsp; Rule: <strong>' + escapeHtml(data.rule) + '</strong>' +
-                    ' &nbsp;|&nbsp; Policy: <strong>' + escapeHtml(data.policy) + '</strong>';
+                    ' &nbsp;|&nbsp; Policy: <strong>' + escapeHtml(data.policy) + '</strong>' +
+                    ignoredNote;
 
                 els.summaryGrid.innerHTML = [
                     { label: cfg.totalLabel, value: data.summary.totalDevices, accent: true },
@@ -891,7 +998,8 @@
                 try {
                     const statusFilter = els.statusFilter.value;
                     const suffix = els.titleSuffix.value.trim();
-                    const data = buildReport(parsedRows, statusFilter, suffix);
+                    const activeRun = getActiveRun();
+                    const data = buildReport(getReportRows(), statusFilter, suffix, activeRun);
                     if (!suffix && data.policy) {
                         els.titleSuffix.placeholder = defaultTitleSuffix(data.policy, statusFilter)
                             .replace(/^.*\u2014\s*/, '');
@@ -914,19 +1022,24 @@
                     const text = await readFile(file);
                     const parsed = parseComplianceCSV(text);
                     parsedRows = parsed.rows;
+                    complianceRuns = groupComplianceRuns(parsedRows);
 
                     if (!parsedRows.length) {
                         throw new Error('No valid data rows found in file.');
                     }
 
+                    populateRunFilter(complianceRuns);
                     renderFileStats(parsedRows);
                     els.statusFilter.disabled = false;
                     els.analyze.disabled = false;
                     generateReport();
                 } catch (err) {
                     parsedRows = [];
+                    complianceRuns = [];
                     report = null;
                     els.statusFilter.disabled = true;
+                    els.runFilter.disabled = true;
+                    els.runField.hidden = true;
                     els.analyze.disabled = true;
                     els.download.disabled = true;
                     els.fileStats.hidden = true;
@@ -938,6 +1051,10 @@
             els.analyze.addEventListener('click', generateReport);
             els.file.addEventListener('change', loadFile);
             els.statusFilter.addEventListener('change', generateReport);
+            els.runFilter.addEventListener('change', () => {
+                renderFileStats(parsedRows);
+                generateReport();
+            });
 
             els.download.addEventListener('click', () => {
                 if (!report) {
